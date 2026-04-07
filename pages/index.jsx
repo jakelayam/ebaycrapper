@@ -136,26 +136,57 @@ export default function Dashboard() {
   }
 
   async function runScraper() {
-    if (!products.length) { log('Add at least one product', 'err'); return; }
-    setRunning(true); setStatusBadge('Running'); setRunStatus('Scraping eBay...');
-    const conditions = [condNew && 'new', condUsed && 'used', condRefurb && 'refurbished'].filter(Boolean);
-    const config = { products, conditions, excludeKeywords: excludes, maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord };
-    log(`Scraping ${products.length} products...`, 'info');
+    setRunning(true); setStatusBadge('Running'); setRunStatus('Triggering GitHub Actions scraper...');
+    log('Triggering GitHub Actions workflow...', 'info');
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-      const res = await fetch('/api/scrape', { method: 'POST', headers, body: JSON.stringify(config) });
+      const res = await fetch('/api/trigger', { method: 'POST', headers });
       const data = await res.json();
-      if (data.success) {
-        setLastResults(data.results || []);
-        setStats({ deals: data.deals, scanned: data.scanned, results: data.results || [] });
-        log(`${data.deals} deals from ${data.scanned || 0} listings`, 'ok');
-        if (data.sheetsStatus) log('Sheets: ' + data.sheetsStatus, data.sheetsStatus === 'sent' ? 'ok' : 'err');
-        if (data.discordStatus) log('Discord: ' + data.discordStatus, data.discordStatus === 'sent' ? 'ok' : 'err');
-        setStatusBadge(data.deals + ' deals'); setRunStatus(`Done — ${data.deals} deals found`);
-      } else { log('Error: ' + data.error, 'err'); setStatusBadge('Error'); setRunStatus('Failed'); }
-    } catch (err) { log('Request failed: ' + err.message, 'err'); setStatusBadge('Error'); }
-    setRunning(false);
+      if (!data.success) {
+        log('Trigger failed: ' + data.error, 'err');
+        setStatusBadge('Error'); setRunStatus('Failed to trigger');
+        setRunning(false);
+        return;
+      }
+      log('Workflow triggered! Polling for completion...', 'ok');
+      setRunStatus('Scraping on GitHub Actions... check Discord in ~5 min');
+
+      // Poll workflow status every 15 seconds
+      let attempts = 0;
+      const maxAttempts = 40; // 10 minutes max
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const statusRes = await fetch('/api/workflow-status');
+          const status = await statusRes.json();
+          if (status.status === 'completed') {
+            clearInterval(poll);
+            if (status.conclusion === 'success') {
+              log('Scrape completed successfully! Deals sent to Discord.', 'ok');
+              setStatusBadge('Done'); setRunStatus('Completed — check Discord for deals');
+            } else {
+              log('Workflow finished with: ' + status.conclusion, 'err');
+              setStatusBadge('Failed'); setRunStatus('Workflow failed: ' + status.conclusion);
+            }
+            setRunning(false);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(poll);
+            log('Still running after 10 min. Check GitHub Actions directly.', 'info');
+            setStatusBadge('Running'); setRunStatus('Still running — check GitHub Actions');
+            setRunning(false);
+          } else {
+            setRunStatus(`Running on GitHub Actions... (${attempts * 15}s elapsed)`);
+          }
+        } catch (e) {
+          // Silently retry
+        }
+      }, 15000);
+    } catch (err) {
+      log('Trigger error: ' + err.message, 'err');
+      setStatusBadge('Error'); setRunStatus('Error');
+      setRunning(false);
+    }
   }
 
   function exportCSV() {
