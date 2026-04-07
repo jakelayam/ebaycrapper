@@ -265,7 +265,8 @@ export default function Dashboard() {
               <div className="flex items-center gap-0 bg-dark-bg rounded-xl border border-dark-border overflow-visible mb-4">
                 <div className="flex items-center gap-2 flex-1 px-4 py-3">
                   <Search className="w-4 h-4 text-gray-500 shrink-0" />
-                  <input type="text" value={newQuery} onChange={e => { setNewQuery(e.target.value); if (!newName) setNewName(e.target.value); }}
+                  <input type="text" value={newQuery} onChange={e => setNewQuery(e.target.value)}
+                    onBlur={() => { if (!newName && newQuery) setNewName(newQuery); }}
                     placeholder="Search eBay for anything..."
                     className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-600" />
                 </div>
