@@ -5,18 +5,15 @@ const cheerio = require('cheerio');
 const GoogleSheetsClient = require('./google-sheets-client');
 const DiscordWebhook = require('./discord-webhook');
 
-// Default thresholds — these are PER-STICK prices
-const DEFAULT_THRESHOLDS = {
-  '32GB': 100,
-  '64GB': 200,
-  '128GB': 500,
-};
-
-const DEFAULT_CAPACITIES = ['32GB', '64GB', '128GB'];
 const DEFAULT_EXCLUDE_KEYWORDS = [];
 const DEFAULT_CONDITIONS = ['new', 'used', 'refurbished'];
 
-// Browser setup for local scraping (bypasses eBay bot detection)
+const DEFAULT_SEARCH_QUERIES = [
+  { query: 'DDR4 32GB', maxPrice: 100, type: 'ram' },
+  { query: 'DDR4 64GB', maxPrice: 200, type: 'ram' },
+  { query: 'DDR4 128GB', maxPrice: 500, type: 'ram' },
+];
+
 const USE_BROWSER = !process.env.VERCEL;
 let _browser = null;
 
@@ -65,8 +62,13 @@ async function fetchEbayPage(url) {
   return response.data;
 }
 
-// Returns the per-stick capacity in GB
-// "2x16GB" → 16, "4x32GB" → 32, "32GB" → 32, "32GB (2x16GB)" → 16
+function cleanTitle(raw) {
+  return raw.replace(/^New Listing/, '').replace(/Opens in a new window or tab$/i, '').trim();
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// RAM-specific helpers
 function parsePerStickCapacity(title) {
   const kitMatch = title.match(/(\d+)\s*x\s*(\d+)\s*GB/i);
   if (kitMatch) return parseInt(kitMatch[2]);
@@ -92,17 +94,13 @@ function isValidDDR4RAM(title) {
   return true;
 }
 
-function cleanTitle(raw) {
-  return raw.replace(/^New Listing/, '').replace(/Opens in a new window or tab$/i, '').trim();
-}
-
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function parseListings(html, capacity, options = {}) {
+// Generic listing parser — works for any product
+// searchQuery: { query: 'DDR4 32GB', maxPrice: 100, type: 'ram' }
+// searchQuery: { query: 'Better Pack 555', maxPrice: 400, type: 'general' }
+function parseListings(html, searchQuery, options = {}) {
   const $ = cheerio.load(html);
-  const gbValue = parseInt(capacity);
-  const thresholds = options.thresholds || DEFAULT_THRESHOLDS;
-  const threshold = thresholds[capacity] || thresholds[`${gbValue}GB`] || 999;
+  const maxPrice = searchQuery.maxPrice || 9999;
+  const isRAM = searchQuery.type === 'ram';
   const excludeKeywords = options.excludeKeywords || DEFAULT_EXCLUDE_KEYWORDS;
   const conditions = options.conditions || DEFAULT_CONDITIONS;
   const deals = [];
@@ -115,6 +113,13 @@ function parseListings(html, capacity, options = {}) {
   }
 
   if ($listings.length === 0) return { deals, listingsOnPage: 0 };
+
+  // For RAM queries, extract the target GB from the query
+  let targetGB = null;
+  if (isRAM) {
+    const gbMatch = searchQuery.query.match(/(\d+)\s*GB/i);
+    if (gbMatch) targetGB = parseInt(gbMatch[1]);
+  }
 
   $listings.each((i, el) => {
     try {
@@ -138,9 +143,6 @@ function parseListings(html, capacity, options = {}) {
       const price = parseFloat(priceMatch[1].replace(/,/g, ''));
       if (!price || isNaN(price)) return;
 
-      // DDR4 validation
-      if (!isValidDDR4RAM(title)) return;
-
       // Exclude keywords
       const titleLower = title.toLowerCase();
       if (excludeKeywords.some(p => titleLower.includes(p.toLowerCase()))) return;
@@ -160,14 +162,24 @@ function parseListings(html, capacity, options = {}) {
         if (!condMatches) return;
       }
 
-      // Per-stick capacity: "32GB" search = 32GB per stick, NOT 2x16GB kits
-      const stickSize = parsePerStickCapacity(title);
-      if (stickSize !== gbValue) return;
+      // RAM-specific filters
+      let stickCount = 1;
+      let perStickCost = price.toFixed(2);
+      let effectivePrice = price;
 
-      // Per-stick cost check
-      const stickCount = getStickCount(title);
-      const perStickCost = (price / stickCount).toFixed(2);
-      if (parseFloat(perStickCost) >= threshold) return;
+      if (isRAM) {
+        if (!isValidDDR4RAM(title)) return;
+        if (targetGB) {
+          const stickSize = parsePerStickCapacity(title);
+          if (stickSize !== targetGB) return;
+        }
+        stickCount = getStickCount(title);
+        perStickCost = (price / stickCount).toFixed(2);
+        effectivePrice = parseFloat(perStickCost);
+      }
+
+      // Price check (per-stick for RAM, total price for general)
+      if (effectivePrice >= maxPrice) return;
 
       // Link
       let link = 'N/A';
@@ -183,9 +195,11 @@ function parseListings(html, capacity, options = {}) {
 
       deals.push({
         timestamp: new Date().toISOString(),
-        capacity: `${gbValue}GB`,
+        searchQuery: searchQuery.query,
+        type: searchQuery.type || 'general',
         title,
         price: price.toFixed(2),
+        maxPrice: maxPrice.toFixed(2),
         stickCount,
         perStickCost,
         condition,
@@ -199,17 +213,14 @@ function parseListings(html, capacity, options = {}) {
   return { deals, listingsOnPage: $listings.length };
 }
 
-async function fetchAndParse(url, capacity, options) {
+async function fetchAndParse(url, searchQuery, options) {
   const html = await fetchEbayPage(url);
-  return parseListings(html, capacity, options);
+  return parseListings(html, searchQuery, options);
 }
 
-// searchQuery: { query: 'DDR4 32GB ECC', capacity: '32GB' }
 async function scrapeQuery(searchQuery, options) {
-  const thresholds = options.thresholds || DEFAULT_THRESHOLDS;
   const maxPages = options.maxPages || 10;
-  const capacity = searchQuery.capacity || '32GB';
-  const queryText = searchQuery.query || `DDR4 ${capacity}`;
+  const queryText = searchQuery.query;
   const encodedQuery = encodeURIComponent(queryText);
   const deals = [];
   let scanned = 0;
@@ -219,7 +230,7 @@ async function scrapeQuery(searchQuery, options) {
 
     try {
       console.log(`[${queryText}] page ${page}...`);
-      const result = await fetchAndParse(url, capacity, { thresholds, ...options });
+      const result = await fetchAndParse(url, searchQuery, options);
 
       scanned += result.listingsOnPage;
       deals.push(...result.deals);
@@ -231,7 +242,7 @@ async function scrapeQuery(searchQuery, options) {
       }
 
       if (result.deals.length === 0 && page > 1) {
-        console.log(`[${queryText}] prices above threshold, done`);
+        console.log(`[${queryText}] prices above max, done`);
         break;
       }
 
@@ -243,14 +254,8 @@ async function scrapeQuery(searchQuery, options) {
   }
 
   console.log(`[${queryText}] total ${deals.length} deals from ${scanned} listings`);
-  return { query: queryText, capacity, deals, scanned };
+  return { query: queryText, deals, scanned };
 }
-
-const DEFAULT_SEARCH_QUERIES = [
-  { query: 'DDR4 32GB', capacity: '32GB' },
-  { query: 'DDR4 64GB', capacity: '64GB' },
-  { query: 'DDR4 128GB', capacity: '128GB' },
-];
 
 async function scrapeEbay(options = {}) {
   const searchQueries = options.searchQueries || DEFAULT_SEARCH_QUERIES;
@@ -258,7 +263,6 @@ async function scrapeEbay(options = {}) {
   let allDeals = [];
   let totalScanned = 0;
 
-  // Sequential locally (browser), parallel on Vercel (axios)
   let queryResults;
   if (USE_BROWSER) {
     queryResults = [];
@@ -290,7 +294,7 @@ async function scrapeAndNotify(options = {}) {
   const sendToSheets = options.sendToSheets !== false;
   const sendToDiscord = options.sendToDiscord !== false;
 
-  console.log('eBay DDR4 RAM Scraper started');
+  console.log('eBay Scraper started');
 
   const scrapeResult = await scrapeEbay(options);
   const allDeals = scrapeResult.deals;
@@ -301,7 +305,7 @@ async function scrapeAndNotify(options = {}) {
     return { deals: 0, scanned, results: [], sheetsStatus: 'skipped', discordStatus: 'skipped' };
   }
 
-  allDeals.sort((a, b) => parseFloat(a.perStickCost) - parseFloat(b.perStickCost));
+  allDeals.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
 
   let sheetsStatus = 'skipped';
   let discordStatus = 'skipped';
@@ -330,7 +334,7 @@ async function scrapeAndNotify(options = {}) {
   return { deals: allDeals.length, scanned, results: allDeals, sheetsStatus, discordStatus };
 }
 
-module.exports = { scrapeAndNotify, DEFAULT_THRESHOLDS, DEFAULT_CAPACITIES, DEFAULT_EXCLUDE_KEYWORDS, DEFAULT_CONDITIONS, DEFAULT_SEARCH_QUERIES };
+module.exports = { scrapeAndNotify, DEFAULT_EXCLUDE_KEYWORDS, DEFAULT_CONDITIONS, DEFAULT_SEARCH_QUERIES };
 
 if (require.main === module) {
   scrapeAndNotify()

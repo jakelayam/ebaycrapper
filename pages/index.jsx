@@ -23,12 +23,6 @@ export default function Dashboard() {
   const [pipelineOpen, setPipelineOpen] = useState(true);
 
   // Config
-  const [thresh32, setThresh32] = useState(100);
-  const [thresh64, setThresh64] = useState(200);
-  const [thresh128, setThresh128] = useState(500);
-  const [cap32, setCap32] = useState(true);
-  const [cap64, setCap64] = useState(true);
-  const [cap128, setCap128] = useState(true);
   const [maxPages, setMaxPages] = useState(10);
   const [condNew, setCondNew] = useState(true);
   const [condUsed, setCondUsed] = useState(true);
@@ -38,12 +32,13 @@ export default function Dashboard() {
   const [excludes, setExcludes] = useState([]);
   const [newExclude, setNewExclude] = useState('');
   const [searchQueries, setSearchQueries] = useState([
-    { query: 'DDR4 32GB', capacity: '32GB' },
-    { query: 'DDR4 64GB', capacity: '64GB' },
-    { query: 'DDR4 128GB', capacity: '128GB' },
+    { query: 'DDR4 32GB', maxPrice: 100, type: 'ram' },
+    { query: 'DDR4 64GB', maxPrice: 200, type: 'ram' },
+    { query: 'DDR4 128GB', maxPrice: 500, type: 'ram' },
   ]);
   const [newQuery, setNewQuery] = useState('');
-  const [newQueryCapacity, setNewQueryCapacity] = useState('32GB');
+  const [newMaxPrice, setNewMaxPrice] = useState(100);
+  const [newType, setNewType] = useState('general');
 
   const logRef = useRef(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -72,16 +67,6 @@ export default function Dashboard() {
           const data = await res.json();
           if (data.settings) {
             const s = data.settings;
-            if (s.thresholds) {
-              setThresh32(s.thresholds['32GB'] ?? 100);
-              setThresh64(s.thresholds['64GB'] ?? 200);
-              setThresh128(s.thresholds['128GB'] ?? 500);
-            }
-            if (s.capacities) {
-              setCap32(s.capacities.includes('32GB'));
-              setCap64(s.capacities.includes('64GB'));
-              setCap128(s.capacities.includes('128GB'));
-            }
             if (s.conditions) {
               setCondNew(s.conditions.includes('new'));
               setCondUsed(s.conditions.includes('used'));
@@ -113,10 +98,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (!settingsLoaded || !authToken) return;
     const timeout = setTimeout(() => {
-      const capacities = [];
-      if (cap32) capacities.push('32GB');
-      if (cap64) capacities.push('64GB');
-      if (cap128) capacities.push('128GB');
       const conditions = [];
       if (condNew) conditions.push('new');
       if (condUsed) conditions.push('used');
@@ -126,14 +107,13 @@ export default function Dashboard() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
         body: JSON.stringify({
-          thresholds: { '32GB': thresh32, '64GB': thresh64, '128GB': thresh128 },
-          capacities, conditions, excludeKeywords: excludes, searchQueries,
+          conditions, excludeKeywords: excludes, searchQueries,
           maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord,
         }),
       }).catch(() => {});
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [thresh32, thresh64, thresh128, cap32, cap64, cap128, maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, searchQueries, authToken, settingsLoaded]);
+  }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, searchQueries, authToken, settingsLoaded]);
 
   async function loadResults() {
     try {
@@ -219,8 +199,8 @@ export default function Dashboard() {
 
   function exportCSV() {
     if (!lastResults.length) return;
-    const headers = ['Capacity','Title','Price','Sticks','Per Stick','Condition','Seller','Link','Timestamp'];
-    const rows = lastResults.map(d => [d.capacity, '"' + (d.title || '').replace(/"/g, '""') + '"', d.price, d.stickCount, d.perStickCost, d.condition, d.seller, '"' + (d.link || '') + '"', d.timestamp]);
+    const headers = ['Search','Title','Price','Max Price','Type','Condition','Seller','Link','Timestamp'];
+    const rows = lastResults.map(d => [d.searchQuery, '"' + (d.title || '').replace(/"/g, '""') + '"', d.price, d.maxPrice, d.type, d.condition, d.seller, '"' + (d.link || '') + '"', d.timestamp]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -234,8 +214,8 @@ export default function Dashboard() {
     router.push('/login');
   }
 
-  const cheapest = stats?.results?.length ? Math.min(...stats.results.map(r => parseFloat(r.perStickCost))).toFixed(2) : '--';
-  const capCount = stats?.results?.length ? new Set(stats.results.map(r => r.capacity)).size : 0;
+  const cheapest = stats?.results?.length ? '$' + Math.min(...stats.results.map(r => parseFloat(r.price))).toFixed(2) : '--';
+  const productCount = stats?.results?.length ? new Set(stats.results.map(r => r.searchQuery)).size : 0;
 
   const Badge = ({ ok, label }) => (
     <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${ok ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>{label}</span>
@@ -300,57 +280,53 @@ export default function Dashboard() {
 
         {/* Config Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-          {/* Thresholds */}
+          {/* Products to Search */}
           <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><DollarSign className="w-3.5 h-3.5" /> Pricing Thresholds (per stick)</h2>
-            <div className="grid grid-cols-3 gap-3">
-              {[{ gb: '32GB', val: thresh32, set: setThresh32, ex: '2x16GB at $180 = $90/stick' },
-                { gb: '64GB', val: thresh64, set: setThresh64, ex: '4x16GB at $600 = $150/stick' },
-                { gb: '128GB', val: thresh128, set: setThresh128, ex: '4x32GB at $1800 = $450/stick' }].map(t => (
-                <div key={t.gb} className="bg-dark-surface2 rounded-lg p-4 text-center">
-                  <div className="text-lg font-bold">{t.gb}</div>
-                  <div className="text-[10px] text-gray-500 mb-2">Max $/stick</div>
-                  <input type="number" value={t.val} onChange={e => t.set(parseInt(e.target.value) || 0)} min={1}
-                    className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-white text-center text-sm font-semibold outline-none focus:border-violet-500" />
-                  <div className="text-[10px] text-gray-600 mt-2">{t.ex}</div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Search className="w-3.5 h-3.5" /> Products to Search</h2>
+            <div className="space-y-2 mb-4">
+              {searchQueries.map((sq, i) => (
+                <div key={i} className="flex items-center gap-2 bg-dark-surface2 rounded-lg px-3 py-2.5">
+                  <Search className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                  <span className="flex-1 text-sm text-white font-medium">{sq.query}</span>
+                  <span className="text-xs text-emerald-400 font-semibold whitespace-nowrap">&lt; ${sq.maxPrice}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${sq.type === 'ram' ? 'bg-violet-500/15 text-violet-400' : 'bg-blue-500/15 text-blue-400'}`}>{sq.type === 'ram' ? 'RAM ($/stick)' : 'General'}</span>
+                  <button onClick={() => setSearchQueries(searchQueries.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
-            <div className="mt-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2"><Search className="w-3.5 h-3.5" /> Search Queries</h3>
-              <div className="space-y-2 mb-3">
-                {searchQueries.map((sq, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-dark-surface2 rounded-lg px-3 py-2">
-                    <Search className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                    <span className="flex-1 text-sm text-white">{sq.query}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-semibold">{sq.capacity}</span>
-                    <button onClick={() => setSearchQueries(searchQueries.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
+            <div className="bg-dark-surface2 rounded-lg p-4">
+              <h3 className="text-xs font-semibold text-gray-400 mb-3">Add New Product</h3>
+              <div className="space-y-2">
                 <input type="text" value={newQuery} onChange={e => setNewQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), capacity: newQueryCapacity }]); setNewQuery(''); } }}
-                  placeholder="e.g. DDR4 32GB ECC server"
-                  className="flex-1 px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 placeholder:text-gray-600" />
-                <select value={newQueryCapacity} onChange={e => setNewQueryCapacity(e.target.value)}
-                  className="px-2 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500">
-                  <option value="32GB">32GB</option>
-                  <option value="64GB">64GB</option>
-                  <option value="128GB">128GB</option>
-                </select>
-                <button onClick={() => { if (newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), capacity: newQueryCapacity }]); setNewQuery(''); } }}
-                  className="px-3 py-2 bg-violet-600/15 hover:bg-violet-600/25 text-violet-400 rounded-lg text-xs font-semibold border border-violet-500/20 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button>
+                  onKeyDown={e => { if (e.key === 'Enter' && newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }]); setNewQuery(''); } }}
+                  placeholder="Search eBay for anything... e.g. Better Pack 555"
+                  className="w-full px-3 py-2.5 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 placeholder:text-gray-600" />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Max Price ($)</label>
+                    <input type="number" value={newMaxPrice} onChange={e => setNewMaxPrice(parseInt(e.target.value) || 0)} min={1}
+                      className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Type</label>
+                    <select value={newType} onChange={e => setNewType(e.target.value)}
+                      className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1">
+                      <option value="general">General (total price)</option>
+                      <option value="ram">RAM (per-stick price)</option>
+                    </select>
+                  </div>
+                </div>
+                <button onClick={() => { if (newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }]); setNewQuery(''); } }}
+                  className="w-full py-2.5 bg-violet-600/15 hover:bg-violet-600/25 text-violet-400 rounded-lg text-sm font-semibold border border-violet-500/20 flex items-center justify-center gap-1.5"><Plus className="w-4 h-4" /> Add Product</button>
               </div>
-              <p className="text-[10px] text-gray-600 mt-2">Each query searches eBay with your exact keywords. Select capacity tier for threshold matching.</p>
             </div>
             <div className="mt-5">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Pages to Scan</h3>
               <div className="flex items-center gap-3">
-                <input type="range" min={1} max={1000} value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))} className="flex-1 accent-violet-500" />
+                <input type="range" min={1} max={20} value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))} className="flex-1 accent-violet-500" />
                 <span className="text-sm font-semibold min-w-[70px]">{maxPages} pages</span>
               </div>
-              <p className="text-[10px] text-gray-600 mt-1">~60 listings/page. Auto-stops when no more deals.</p>
+              <p className="text-[10px] text-gray-600 mt-1">~60 listings/page per product. Auto-stops when prices exceed max.</p>
             </div>
           </div>
 
@@ -436,8 +412,8 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
             {[{ v: stats.deals, l: 'Deals Found', c: 'text-emerald-400', icon: TrendingDown },
               { v: stats.scanned || 0, l: 'Listings Scanned', c: 'text-blue-400', icon: BarChart3 },
-              { v: '$' + cheapest, l: 'Best $/Stick', c: 'text-violet-400', icon: DollarSign },
-              { v: capCount, l: 'Capacities', c: 'text-yellow-400', icon: Cpu }].map((s, i) => (
+              { v: cheapest, l: 'Best Price', c: 'text-violet-400', icon: DollarSign },
+              { v: productCount, l: 'Products', c: 'text-yellow-400', icon: Cpu }].map((s, i) => (
               <div key={i} className="bg-dark-surface2 rounded-lg p-4 text-center">
                 <s.icon className={`w-5 h-5 mx-auto mb-1 ${s.c}`} />
                 <div className={`text-2xl font-bold ${s.c}`}>{s.v}</div>
@@ -463,24 +439,22 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-dark-surface2 sticky top-0 z-10">
-                    {['Capacity', 'Title', 'Price', 'Sticks', '$/Stick', 'Condition', 'Link'].map(h => (
+                    {['Product', 'Title', 'Price', 'Condition', 'Link'].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {lastResults.map((d, i) => {
-                    const capColor = d.capacity === '32GB' ? 'bg-blue-500/15 text-blue-400' : d.capacity === '64GB' ? 'bg-violet-500/15 text-violet-400' : 'bg-yellow-500/15 text-yellow-400';
                     const condColor = (d.condition || '').toLowerCase().includes('new') && !(d.condition || '').toLowerCase().includes('pre-owned') ? 'bg-emerald-500/10 text-emerald-400' : (d.condition || '').toLowerCase().includes('refurb') ? 'bg-yellow-500/10 text-yellow-400' : 'bg-blue-500/10 text-blue-400';
                     const hasLink = d.link && d.link !== 'N/A';
-                    const title = d.title?.length > 65 ? d.title.substring(0, 65) + '...' : d.title;
+                    const title = d.title?.length > 70 ? d.title.substring(0, 70) + '...' : d.title;
+                    const priceLabel = d.type === 'ram' && d.stickCount > 1 ? `$${d.price} ($${d.perStickCost}/stick × ${d.stickCount})` : `$${d.price}`;
                     return (
                       <tr key={i} className="hover:bg-violet-500/[0.03] border-t border-dark-border">
-                        <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${capColor}`}>{d.capacity}</span></td>
-                        <td className="px-3 py-2.5 max-w-[320px] truncate">{hasLink ? <a href={d.link} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline" title={d.title}>{title}</a> : title}</td>
-                        <td className="px-3 py-2.5 text-emerald-400 font-semibold whitespace-nowrap">${d.price}</td>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs"><span className="text-gray-200 font-semibold">{d.stickCount}x</span></td>
-                        <td className="px-3 py-2.5 text-emerald-400 font-semibold whitespace-nowrap">${d.perStickCost}</td>
+                        <td className="px-3 py-2.5"><span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-400">{d.searchQuery || d.capacity || '?'}</span></td>
+                        <td className="px-3 py-2.5 max-w-[350px] truncate">{hasLink ? <a href={d.link} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline" title={d.title}>{title}</a> : title}</td>
+                        <td className="px-3 py-2.5 text-emerald-400 font-semibold whitespace-nowrap">{priceLabel}</td>
                         <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${condColor}`}>{d.condition || 'N/A'}</span></td>
                         <td className="px-3 py-2.5">{hasLink ? <a href={d.link} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1 text-xs">View <ExternalLink className="w-3 h-3" /></a> : 'N/A'}</td>
                       </tr>
