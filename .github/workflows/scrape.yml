@@ -1,0 +1,47 @@
+name: eBay DDR4 Scraper
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch: {}      # Manual trigger button
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Run scraper
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_TOKEN: ${{ secrets.GOOGLE_TOKEN }}
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          node -e "
+            require('dotenv').config();
+            process.env.CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
+            const { scrapeAndNotify } = require('./scraper');
+            scrapeAndNotify({ sendToSheets: true, sendToDiscord: true })
+              .then(r => {
+                console.log('Deals:', r.deals, '| Scanned:', r.scanned);
+                console.log('Discord:', r.discordStatus);
+                console.log('Sheets:', r.sheetsStatus);
+              })
+              .catch(e => { console.error(e); process.exit(1); });
+          "

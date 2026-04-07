@@ -1,14 +1,12 @@
 {
   "name": "ebay-ddr4-scraper",
-  "version": "2.0.0",
-  "description": "eBay DDR4 RAM deal scraper with Google Sheets integration (Vercel deployable)",
-  "main": "scraper.js",
-  "type": "commonjs",
+  "version": "3.0.0",
+  "description": "eBay DDR4 RAM deal scraper with Next.js dashboard",
   "scripts": {
-    "start": "node -e \"require('dotenv').config(); require('./scraper').scrapeAndNotify()\"",
-    "dev": "node server.js",
-    "scrape": "node -e \"require('dotenv').config(); require('./scraper').scrapeAndNotify()\"",
-    "test": "echo 'No tests configured'"
+    "start": "node runner.js",
+    "dev": "next dev",
+    "build": "next build",
+    "scrape": "node -e \"require('dotenv').config(); require('./scraper').scrapeAndNotify()\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -16,15 +14,16 @@
     "cheerio": "^1.2.0",
     "dotenv": "^16.3.1",
     "googleapis": "^118.0.0",
-    "puppeteer-core": "^24.40.0"
+    "lucide-react": "^0.460.0",
+    "next": "^14.2.0",
+    "puppeteer-core": "^24.40.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
   },
-  "keywords": [
-    "ebay",
-    "ddr4",
-    "scraper",
-    "deals",
-    "vercel"
-  ],
-  "author": "",
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16"
+  },
   "license": "MIT"
 }

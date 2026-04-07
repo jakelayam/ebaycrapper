@@ -17,15 +17,49 @@ const DEFAULT_EXCLUDE_KEYWORDS = ['broken', 'for parts', 'untested', 'as-is', 'a
 
 const DEFAULT_CONDITIONS = ['new', 'used', 'refurbished'];
 
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-];
+// Use puppeteer locally (real Chrome), axios on Vercel
+// Use browser locally and on GitHub Actions, axios only on Vercel
+const USE_BROWSER = !process.env.VERCEL;
+let _browser = null;
+
+async function getBrowser() {
+  if (!USE_BROWSER) return null;
+  if (_browser && _browser.connected) return _browser;
+  const puppeteer = require('puppeteer-core');
+  const chromePath = process.env.CHROME_PATH || (process.platform === 'win32'
+    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    : process.platform === 'darwin'
+      ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+      : '/usr/bin/google-chrome');
+  _browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+  });
+  return _browser;
+}
+
+async function closeBrowser() {
+  if (_browser) { await _browser.close().catch(() => {}); _browser = null; }
+}
 
 async function fetchEbayPage(url) {
+  if (USE_BROWSER) {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    try {
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForSelector('li.s-item, li.s-card', { timeout: 8000 }).catch(() => {});
+      return await page.content();
+    } finally {
+      await page.close();
+    }
+  }
+  // Vercel: use axios
   const response = await axios.get(url, {
     headers: {
-      'User-Agent': USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.5',
       'Accept-Encoding': 'gzip, deflate, br',
@@ -159,18 +193,7 @@ async function fetchAndParse(url, capacity, options) {
   return result;
 }
 
-// Fetch multiple pages in parallel (batch)
-async function fetchBatch(urls, capacity, options) {
-  const results = await Promise.all(
-    urls.map(url =>
-      fetchAndParse(url, capacity, options).catch(err => {
-        console.error(`  Fetch error: ${err.message}`);
-        return { deals: [], listingsOnPage: 0 };
-      })
-    )
-  );
-  return results;
-}
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function scrapeEbay(options = {}) {
   const thresholds = options.thresholds || DEFAULT_THRESHOLDS;
@@ -180,52 +203,45 @@ async function scrapeEbay(options = {}) {
   let allDeals = [];
   let totalScanned = 0;
 
-  // Scrape all capacities in parallel
-  const capacityResults = await Promise.all(capacities.map(async (capacity) => {
+  // Scrape capacities one at a time to avoid rate limiting
+  const capacityResults = [];
+  for (const capacity of capacities) {
     const deals = [];
     let scanned = 0;
-    const BATCH_SIZE = 5; // fetch 5 pages at once
 
-    for (let startPage = 1; startPage <= maxPages; startPage += BATCH_SIZE) {
-      const endPage = Math.min(startPage + BATCH_SIZE - 1, maxPages);
-      const urls = [];
-      for (let p = startPage; p <= endPage; p++) {
-        urls.push(`https://www.ebay.com/sch/i.html?_nkw=DDR4+${capacity}&_sop=15&rt=nc&LH_BIN=1&_pgn=${p}`);
-      }
+    for (let page = 1; page <= maxPages; page++) {
+      const url = `https://www.ebay.com/sch/i.html?_nkw=DDR4+${capacity}&_sop=15&rt=nc&LH_BIN=1&_pgn=${page}`;
 
-      console.log(`${capacity}: fetching pages ${startPage}-${endPage}...`);
-      const results = await fetchBatch(urls, capacity, { thresholds, ...options });
+      try {
+        console.log(`${capacity}: page ${page}...`);
+        const result = await fetchAndParse(url, capacity, { thresholds, ...options });
 
-      let batchScanned = 0;
-      let batchDeals = 0;
-      let emptyPages = 0;
-
-      for (const result of results) {
-        batchScanned += result.listingsOnPage;
-        batchDeals += result.deals.length;
-        if (result.listingsOnPage === 0) emptyPages++;
+        scanned += result.listingsOnPage;
         deals.push(...result.deals);
-      }
+        console.log(`  => ${result.listingsOnPage} listings, ${result.deals.length} deals`);
 
-      scanned += batchScanned;
-      console.log(`${capacity}: pages ${startPage}-${endPage} => ${batchScanned} listings, ${batchDeals} deals`);
+        // No more results from eBay
+        if (result.listingsOnPage === 0) {
+          console.log(`${capacity}: no more results, done`);
+          break;
+        }
 
-      // Stop if we got empty pages (no more results from eBay)
-      if (emptyPages >= BATCH_SIZE) {
-        console.log(`${capacity}: no more results from eBay, done`);
-        break;
-      }
+        // No deals on this page and past page 1 — prices above threshold
+        if (result.deals.length === 0 && page > 1) {
+          console.log(`${capacity}: prices above threshold, done`);
+          break;
+        }
 
-      // Stop if entire batch had 0 deals and we're past page 2
-      // (prices sorted ascending — if a full batch has 0 deals, rest won't either)
-      if (batchDeals === 0 && startPage > 1) {
-        console.log(`${capacity}: no deals in batch, prices above threshold, done`);
+        await delay(1500); // courtesy delay between pages
+      } catch (err) {
+        console.error(`${capacity} page ${page} error: ${err.message}`);
         break;
       }
     }
 
-    return { capacity, deals, scanned };
-  }));
+    capacityResults.push({ capacity, deals, scanned });
+    console.log(`${capacity}: total ${deals.length} deals from ${scanned} listings`);
+  }
 
   // Merge and dedup
   for (const result of capacityResults) {
@@ -239,6 +255,7 @@ async function scrapeEbay(options = {}) {
     console.log(`${result.capacity}: ${result.deals.length} deals from ${result.scanned} listings`);
   }
 
+  await closeBrowser();
   return { deals: allDeals, scanned: totalScanned };
 }
 
