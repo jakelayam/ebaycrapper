@@ -13,7 +13,7 @@ const DEFAULT_THRESHOLDS = {
 };
 
 const DEFAULT_CAPACITIES = ['32GB', '64GB', '128GB'];
-const DEFAULT_EXCLUDE_KEYWORDS = ['broken', 'for parts', 'untested', 'as-is', 'as is', 'not working', 'damaged', '4gb', '8gb', '16gb'];
+const DEFAULT_EXCLUDE_KEYWORDS = [];
 const DEFAULT_CONDITIONS = ['new', 'used', 'refurbished'];
 
 // Browser setup for local scraping (bypasses eBay bot detection)

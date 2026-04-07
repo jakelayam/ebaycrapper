@@ -35,7 +35,7 @@ export default function Dashboard() {
   const [condRefurb, setCondRefurb] = useState(true);
   const [optSheets, setOptSheets] = useState(true);
   const [optDiscord, setOptDiscord] = useState(true);
-  const [excludes, setExcludes] = useState(['broken', 'for parts', 'untested', 'as-is', 'as is', 'not working', 'damaged', '4gb', '8gb', '16gb']);
+  const [excludes, setExcludes] = useState([]);
   const [newExclude, setNewExclude] = useState('');
 
   const logRef = useRef(null);
