@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>eBay DDR4 RAM Scraper</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -184,6 +185,8 @@
       <span class="badge badge--info">DDR4 Only</span>
       <span class="badge badge--info">Buy It Now</span>
       <span class="badge badge--off" id="status-badge">Idle</span>
+      <span id="user-email" style="font-size:12px;color:var(--text-dim);margin-left:8px;"></span>
+      <button onclick="handleLogout()" class="btn btn--sm btn--outline" style="margin-left:4px;padding:4px 12px;font-size:12px;">Logout</button>
     </div>
   </header>
 
@@ -416,6 +419,34 @@
 
 <script>
   let lastResults = [];
+  let sbClient = null;
+  let authToken = null;
+
+  // Auth: check session on load, redirect to login if not authenticated
+  async function initAuth() {
+    try {
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return; // skip auth if not configured
+      sbClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) {
+        window.location.href = '/login.html';
+        return;
+      }
+      authToken = session.access_token;
+      document.getElementById('user-email').textContent = session.user.email;
+    } catch (e) {
+      // If config endpoint fails, skip auth (dev mode)
+    }
+  }
+
+  async function handleLogout() {
+    if (sbClient) {
+      await sbClient.auth.signOut();
+    }
+    window.location.href = '/login.html';
+  }
 
   // Default exclusion keywords
   let excludeKeywords = ['broken', 'for parts', 'untested', 'as-is', 'as is', 'not working', 'damaged'];
@@ -522,9 +553,11 @@
     document.getElementById('run-status').textContent = 'Scraping eBay... this takes 10-30 seconds';
 
     try {
+      const fetchHeaders = { 'Content-Type': 'application/json' };
+      if (authToken) fetchHeaders['Authorization'] = 'Bearer ' + authToken;
       const res = await fetch('/api/scrape', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: fetchHeaders,
         body: JSON.stringify(config),
       });
       const data = await res.json();
@@ -650,6 +683,7 @@
   });
 
   // Init
+  initAuth();
   renderExcludeTags();
   checkStatus();
 </script>

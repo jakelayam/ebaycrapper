@@ -1,6 +1,13 @@
 const { scrapeAndNotify, DEFAULT_THRESHOLDS, DEFAULT_CAPACITIES, DEFAULT_EXCLUDE_KEYWORDS, DEFAULT_CONDITIONS } = require('../scraper');
+const { verifyAuth } = require('../lib/auth');
 
 module.exports = async (req, res) => {
+  // Auth check (skipped if Supabase not configured)
+  const auth = await verifyAuth(req);
+  if (!auth.authenticated) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: ' + auth.error });
+  }
+
   // Cron jobs use GET with Bearer token
   if (req.method === 'GET') {
     const cronSecret = process.env.CRON_SECRET;
@@ -23,6 +30,7 @@ module.exports = async (req, res) => {
       capacities: body.capacities || DEFAULT_CAPACITIES,
       conditions: body.conditions || DEFAULT_CONDITIONS,
       excludeKeywords: body.excludeKeywords || DEFAULT_EXCLUDE_KEYWORDS,
+      maxPages: body.maxPages || 1000,
       sendToSheets: body.sendToSheets !== false,
       sendToDiscord: body.sendToDiscord !== false,
     };
