@@ -37,7 +37,7 @@ jobs:
             require('dotenv').config();
             process.env.CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
             const { scrapeAndNotify } = require('./scraper');
-            scrapeAndNotify({ sendToSheets: false, sendToDiscord: true, maxPages: 5 })
+            scrapeAndNotify({ sendToSheets: false, sendToDiscord: true, maxPages: 10 })
               .then(r => {
                 console.log('Deals:', r.deals, '| Scanned:', r.scanned);
                 console.log('Discord:', r.discordStatus);
