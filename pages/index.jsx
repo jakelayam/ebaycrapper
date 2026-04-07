@@ -98,7 +98,7 @@ export default function Dashboard() {
   const [lastResults, setLastResults] = useState([]);
   const [running, setRunning] = useState(false);
   const [statusBadge, setStatusBadge] = useState('Idle');
-  const [runStatus, setRunStatus] = useState('Ready to scrape');
+  const [runStatus, setRunStatus] = useState('Configure thresholds & filters, then hit Run');
   const [stats, setStats] = useState(null);
   const [integrations, setIntegrations] = useState({ discord: false, sheets: false });
   const [logs, setLogs] = useState([{ msg: 'Ready. Add products and hit Run.', type: 'info' }]);
@@ -154,16 +154,36 @@ export default function Dashboard() {
 
   function addExclude() {
     const val = newExclude.trim().toLowerCase();
-    if (val && !excludes.includes(val)) setExcludes([...excludes, val]);
+    if (val && !excludes.includes(val)) { setExcludes([...excludes, val]); log('Added exclusion: "' + val + '"', 'info'); }
     setNewExclude('');
   }
 
+  function removeExclude(idx) {
+    const removed = excludes[idx];
+    setExcludes(excludes.filter((_, i) => i !== idx));
+    log('Removed exclusion: "' + removed + '"', 'info');
+  }
+
   async function runScraper() {
-    if (!products.length) { log('Add at least one product', 'err'); return; }
-    setRunning(true); setStatusBadge('Running'); setRunStatus('Scraping eBay...');
-    const conditions = [condNew && 'new', condUsed && 'used', condRefurb && 'refurbished'].filter(Boolean);
-    const config = { products, conditions, excludeKeywords: excludes, maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord };
-    log(`Scraping ${products.length} products...`, 'info');
+    setRunning(true); setStatusBadge('Running'); setRunStatus('Scraping eBay... this takes 10-30 seconds');
+
+    const capacities = [];
+    if (cap32) capacities.push('32GB');
+    if (cap64) capacities.push('64GB');
+    if (cap128) capacities.push('128GB');
+    const conditions = [];
+    if (condNew) conditions.push('new');
+    if (condUsed) conditions.push('used');
+    if (condRefurb) conditions.push('refurbished');
+    const config = {
+      thresholds: { '32GB': thresh32, '64GB': thresh64, '128GB': thresh128 },
+      capacities, conditions, excludeKeywords: excludes, maxPages,
+      sendToSheets: optSheets, sendToDiscord: optDiscord,
+    };
+
+    log('Starting scrape: ' + capacities.join(', '), 'info');
+    log('Thresholds: ' + capacities.map(c => c + ' < $' + config.thresholds[c] + '/stick').join(' | '), 'info');
+
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
@@ -172,28 +192,47 @@ export default function Dashboard() {
       if (data.success) {
         setLastResults(data.results || []);
         setStats({ deals: data.deals, scanned: data.scanned, results: data.results || [] });
-        log(`${data.deals} deals from ${data.scanned || 0} listings`, 'ok');
-        if (data.sheetsStatus) log('Sheets: ' + data.sheetsStatus, data.sheetsStatus === 'sent' ? 'ok' : 'err');
-        if (data.discordStatus) log('Discord: ' + data.discordStatus, data.discordStatus === 'sent' ? 'ok' : 'err');
-        setStatusBadge(data.deals + ' deals'); setRunStatus(`Done — ${data.deals} deals found`);
-      } else { log('Error: ' + data.error, 'err'); setStatusBadge('Error'); setRunStatus('Failed'); }
-    } catch (err) { log('Request failed: ' + err.message, 'err'); setStatusBadge('Error'); }
+        log('Scrape complete: ' + data.deals + ' deals found', 'ok');
+        if (data.sheetsStatus) log('Sheets: ' + data.sheetsStatus, data.sheetsStatus === 'sent' ? 'ok' : 'info');
+        if (data.discordStatus) log('Discord: ' + data.discordStatus, data.discordStatus === 'sent' ? 'ok' : 'info');
+        setStatusBadge(data.deals + ' deals');
+        setRunStatus('Done at ' + new Date().toLocaleTimeString() + ' — ' + data.deals + ' deals found');
+      } else {
+        log('Error: ' + data.error, 'err');
+        setStatusBadge('Error');
+        setRunStatus('Failed: ' + data.error);
+      }
+    } catch (err) {
+      log('Request failed: ' + err.message, 'err');
+      setStatusBadge('Error');
+      setRunStatus('Network error');
+    }
     setRunning(false);
   }
 
   function exportCSV() {
     if (!lastResults.length) return;
-    const h = ['Product','Category','Title','Price','Condition','Seller','Link','Timestamp'];
-    const rows = lastResults.map(d => [d.product, d.category, '"' + (d.title || '').replace(/"/g, '""') + '"', d.price, d.condition, d.seller, '"' + (d.link || '') + '"', d.timestamp]);
-    const blob = new Blob([[h.join(','), ...rows.map(r => r.join(','))].join('\n')], { type: 'text/csv' });
+    const headers = ['Capacity','Title','Price','Sticks','Per Stick','Condition','Seller','Link','Timestamp'];
+    const rows = lastResults.map(d => [d.capacity, '"' + (d.title || '').replace(/"/g, '""') + '"', d.price, d.stickCount, d.perStickCost, d.condition, d.seller, '"' + (d.link || '') + '"', d.timestamp]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'), { href: url, download: 'deals-' + new Date().toISOString().slice(0, 10) + '.csv' }).click();
+    const a = document.createElement('a'); a.href = url; a.download = 'ddr4-deals-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
     URL.revokeObjectURL(url);
+    log('Exported ' + lastResults.length + ' deals to CSV', 'ok');
   }
 
-  const filteredResults = filterProduct === 'all' ? lastResults : lastResults.filter(d => d.product === filterProduct);
-  const cheapest = stats?.results?.length ? '$' + Math.min(...stats.results.map(r => parseFloat(r.price))).toFixed(2) : '--';
-  const productNames = [...new Set(lastResults.map(d => d.product))];
+  async function handleLogout() {
+    if (sb) await sb.auth.signOut();
+    router.push('/login');
+  }
+
+  const cheapest = stats?.results?.length ? Math.min(...stats.results.map(r => parseFloat(r.perStickCost))).toFixed(2) : '--';
+  const capCount = stats?.results?.length ? new Set(stats.results.map(r => r.capacity)).size : 0;
+
+  const Badge = ({ ok, label }) => (
+    <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${ok ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>{label}</span>
+  );
 
   return (
     <>
@@ -217,31 +256,18 @@ export default function Dashboard() {
       </Head>
       <div className="max-w-6xl mx-auto px-4 py-8 sm:px-6">
 
-        {/* HEADER */}
-        <header className="flex items-center justify-between mb-10">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-600/20">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">eBay Scraper</h1>
-              <p className="text-xs text-gray-500 mt-0.5">Multi-product deal hunter by OpenClaw</p>
-            </div>
+        {/* Header */}
+        <header className="flex items-center justify-between py-5 border-b border-dark-border mb-7 flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2"><Search className="w-5 h-5 text-violet-400" /> eBay DDR4 RAM Scraper</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Automated deal hunter — scrape, filter, alert</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3 glass rounded-full px-4 py-2">
-              <div className="flex items-center gap-1.5" title={integrations.discord ? 'Discord connected' : 'Discord not configured'}>
-                <MessageSquare className="w-3.5 h-3.5 text-gray-500" />
-                <div className={`w-1.5 h-1.5 rounded-full ${integrations.discord ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400'}`} />
-              </div>
-              <div className="w-px h-3 bg-gray-700" />
-              <div className="flex items-center gap-1.5" title={integrations.sheets ? 'Sheets connected' : 'Sheets not configured'}>
-                <FileSpreadsheet className="w-3.5 h-3.5 text-gray-500" />
-                <div className={`w-1.5 h-1.5 rounded-full ${integrations.sheets ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400'}`} />
-              </div>
-            </div>
-            <div className={`px-3 py-1.5 rounded-full text-xs font-semibold ${statusBadge === 'Idle' ? 'glass text-gray-400' : statusBadge === 'Running' ? 'bg-amber-500/10 text-amber-400 animate-pulse' : statusBadge === 'Error' ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{statusBadge}</div>
-            {user && <button onClick={async () => { if (sb) await sb.auth.signOut(); router.push('/login'); }} className="p-2 rounded-xl glass glass-hover text-gray-500 hover:text-white transition-all"><LogOut className="w-3.5 h-3.5" /></button>}
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">DDR4 Only</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">Buy It Now</span>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${statusBadge === 'Idle' ? 'bg-red-500/15 text-red-400' : statusBadge === 'Running' ? 'bg-yellow-500/15 text-yellow-400' : statusBadge === 'Error' ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>{statusBadge}</span>
+            {user && <span className="text-xs text-gray-500 ml-2">{user.email}</span>}
+            <button onClick={handleLogout} className="ml-1 p-1.5 rounded-lg border border-dark-border text-gray-500 hover:text-white hover:border-gray-500 transition-colors"><LogOut className="w-3.5 h-3.5" /></button>
           </div>
         </header>
 
@@ -270,9 +296,16 @@ export default function Dashboard() {
                     placeholder="Search eBay for anything..."
                     className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-600" />
                 </div>
-                <div className="border-l border-dark-border">
-                  <CategoryDropdown value={newCategory} onChange={setNewCategory} />
-                </div>
+              ))}
+            </div>
+            <div className="mt-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Capacities to Search</h3>
+              <div className="flex gap-5">
+                {[[cap32, setCap32, '32GB'], [cap64, setCap64, '64GB'], [cap128, setCap128, '128GB']].map(([v, s, l]) => (
+                  <label key={l} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={v} onChange={e => s(e.target.checked)} className="w-4 h-4 accent-violet-500" /> {l}
+                  </label>
+                ))}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -309,33 +342,26 @@ export default function Dashboard() {
                   <button onClick={() => { setProducts(products.filter((_, j) => j !== i)); log(`Removed: ${p.name}`, 'info'); }}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-gray-600 hover:text-red-400 transition-all"><X className="w-3.5 h-3.5" /></button>
                 </div>
+                <Badge ok={int.ok} label={int.ok ? 'Connected' : 'Not configured'} />
               </div>
             ))}
             {!products.length && <div className="text-center py-10 text-gray-600 text-sm">No products yet. Click <strong className="text-violet-400">Add Product</strong> above.</div>}
           </div>
-        </section>
+        </div>
 
-        {/* RUN */}
-        <section className="glass rounded-2xl p-6 mb-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <button onClick={runScraper} disabled={running || !products.length}
-              className="px-10 py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center gap-2.5 text-sm glow-btn">
+        {/* Run */}
+        <div className="bg-dark-surface border border-dark-border rounded-xl p-6 mb-5">
+          <div className="flex items-center gap-4 mb-3">
+            <button onClick={runScraper} disabled={running}
+              className="px-8 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center gap-2">
               {running ? <><Clock className="w-4 h-4 animate-spin" /> Scraping...</> : <><Play className="w-4 h-4" /> Run Scraper</>}
             </button>
-            <div className="flex-1">
-              <p className="text-sm text-gray-300 font-medium">{runStatus}</p>
-              <p className="text-[11px] text-gray-600 mt-0.5">{products.length} product{products.length !== 1 ? 's' : ''} | {[condNew && 'New', condUsed && 'Used', condRefurb && 'Refurb'].filter(Boolean).join(', ')} | Max {maxPages} pages</p>
-            </div>
-            {lastResults.length > 0 && (
-              <button onClick={exportCSV} className="px-4 py-2.5 glass glass-hover rounded-xl text-xs text-gray-400 hover:text-white transition-all flex items-center gap-1.5 font-medium">
-                <Download className="w-3.5 h-3.5" /> Export CSV
-              </button>
-            )}
+            <span className="text-sm text-gray-500">{runStatus}</span>
           </div>
-          {running && <div className="h-1 bg-dark-surface2 rounded-full overflow-hidden mt-5"><div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full animate-pulse" style={{ width: '80%' }} /></div>}
-        </section>
+          {running && <div className="h-1 bg-dark-surface2 rounded-full overflow-hidden"><div className="h-full bg-violet-500 rounded-full animate-pulse" style={{ width: '80%' }} /></div>}
+        </div>
 
-        {/* STATS */}
+        {/* Stats */}
         {stats && (
           <div className="grid grid-cols-3 gap-4 mb-6 fade-in">
             {[
@@ -352,34 +378,33 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* RESULTS */}
+        {/* Results */}
         {lastResults.length > 0 ? (
-          <section className="glass rounded-2xl mb-6 overflow-hidden fade-in">
-            <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between flex-wrap gap-3">
-              <h2 className="text-sm font-semibold text-white">{filteredResults.length} Deals</h2>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setFilterProduct('all')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterProduct === 'all' ? 'bg-violet-600/20 text-violet-400 border border-violet-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>All</button>
-                {productNames.map(name => (
-                  <button key={name} onClick={() => setFilterProduct(name)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterProduct === name ? 'bg-violet-600/20 text-violet-400 border border-violet-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>{name}</button>
-                ))}
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 mb-5">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Results</h2>
+                <div className="text-2xl font-bold">{lastResults.length} <span className="text-sm text-gray-500 font-normal">deals found</span></div>
               </div>
+              <button onClick={exportCSV} className="px-3 py-1.5 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white hover:border-gray-500 transition-colors flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5" /> Export CSV
+              </button>
             </div>
             <div className="overflow-x-auto max-h-[520px] overflow-y-auto scrollbar-thin">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-white/[0.02] sticky top-0 z-10 backdrop-blur-sm">
-                    {['Product', 'Title', 'Price', 'Condition', ''].map(h => (
-                      <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">{h}</th>
+                  <tr className="bg-dark-surface2 sticky top-0 z-10">
+                    {['Capacity', 'Title', 'Price', 'Sticks', '$/Stick', 'Condition', 'Link'].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredResults.map((d, i) => {
+                  {lastResults.map((d, i) => {
+                    const capColor = d.capacity === '32GB' ? 'bg-blue-500/15 text-blue-400' : d.capacity === '64GB' ? 'bg-violet-500/15 text-violet-400' : 'bg-yellow-500/15 text-yellow-400';
+                    const condColor = (d.condition || '').toLowerCase().includes('new') && !(d.condition || '').toLowerCase().includes('pre-owned') ? 'bg-emerald-500/10 text-emerald-400' : (d.condition || '').toLowerCase().includes('refurb') ? 'bg-yellow-500/10 text-yellow-400' : 'bg-blue-500/10 text-blue-400';
                     const hasLink = d.link && d.link !== 'N/A';
-                    const title = d.title?.length > 65 ? d.title.substring(0, 62) + '...' : d.title;
-                    const condColor = (d.condition || '').toLowerCase().includes('new') && !(d.condition || '').toLowerCase().includes('pre-owned') ? 'text-emerald-400 bg-emerald-500/10' : (d.condition || '').toLowerCase().includes('refurb') ? 'text-amber-400 bg-amber-500/10' : 'text-blue-400 bg-blue-500/10';
+                    const title = d.title?.length > 65 ? d.title.substring(0, 65) + '...' : d.title;
                     return (
                       <tr key={i} className="hover:bg-white/[0.02] border-t border-white/[0.03] transition-colors group">
                         <td className="px-5 py-3.5"><span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-violet-500/10 text-violet-400 border border-violet-500/10">{d.product}</span></td>
@@ -471,12 +496,10 @@ export default function Dashboard() {
           </div>
           <div ref={logRef} className="px-5 py-3 font-mono text-[11px] max-h-32 overflow-y-auto space-y-0.5 scrollbar-thin">
             {logs.map((l, i) => (
-              <div key={i} className={l.type === 'ok' ? 'text-emerald-400' : l.type === 'err' ? 'text-red-400' : l.type === 'info' ? 'text-blue-400/70' : 'text-gray-600'}>{l.msg}</div>
+              <div key={i} className={l.type === 'ok' ? 'text-emerald-400' : l.type === 'err' ? 'text-red-400' : l.type === 'info' ? 'text-blue-400' : 'text-gray-500'}>{l.msg}</div>
             ))}
           </div>
         </div>
-
-        <p className="text-center text-[10px] text-gray-700 mt-8 font-medium tracking-wide">OpenClaw eBay Scraper v3.0</p>
       </div>
     </>
   );
