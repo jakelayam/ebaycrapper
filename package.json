@@ -15,7 +15,8 @@
     "axios": "^1.6.0",
     "cheerio": "^1.2.0",
     "dotenv": "^16.3.1",
-    "googleapis": "^118.0.0"
+    "googleapis": "^118.0.0",
+    "puppeteer-core": "^24.40.0"
   },
   "keywords": [
     "ebay",
