@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login — eBay DDR4 RAM Scraper</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -141,7 +141,7 @@
 </div>
 
 <script>
-  let supabase = null;
+  let sbClient = null;
 
   // Load Supabase config from API
   async function initSupabase() {
@@ -152,10 +152,14 @@
         showAlert('Supabase not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel env vars.', 'error');
         return;
       }
-      supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      if (!window.supabase || !window.supabase.createClient) {
+        showAlert('Supabase JS library failed to load. Try refreshing.', 'error');
+        return;
+      }
+      sbClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
 
       // Check if already logged in
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await sbClient.auth.getSession();
       if (session) {
         window.location.href = '/';
       }
@@ -235,26 +239,35 @@
 
   async function handleSignIn(e) {
     e.preventDefault();
-    if (!supabase) return showAlert('Supabase not initialized', 'error');
+    if (!sbClient) return showAlert('Supabase not initialized. Check console for errors.', 'error');
 
     const email = document.getElementById('si-email').value.trim();
     const password = document.getElementById('si-password').value;
 
     setLoading('si-btn', true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading('si-btn', false);
+    try {
+      const { data, error } = await sbClient.auth.signInWithPassword({ email, password });
+      setLoading('si-btn', false);
 
-    if (error) {
-      showAlert(error.message, 'error');
-      return;
+      if (error) {
+        showAlert(error.message, 'error');
+        return;
+      }
+
+      if (data && data.session) {
+        window.location.href = '/';
+      } else {
+        showAlert('Login succeeded but no session returned. Try again.', 'error');
+      }
+    } catch (err) {
+      setLoading('si-btn', false);
+      showAlert('Login error: ' + err.message, 'error');
     }
-
-    window.location.href = '/';
   }
 
   async function handleSignUp(e) {
     e.preventDefault();
-    if (!supabase) return showAlert('Supabase not initialized', 'error');
+    if (!sbClient) return showAlert('Supabase not initialized', 'error');
 
     const name = document.getElementById('su-name').value.trim();
     const email = document.getElementById('su-email').value.trim();
@@ -271,7 +284,7 @@
     }
 
     setLoading('su-btn', true);
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await sbClient.auth.signUp({
       email,
       password,
       options: { data: { display_name: name } }

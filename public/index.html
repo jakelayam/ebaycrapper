@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>eBay DDR4 RAM Scraper</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -428,6 +428,7 @@
       const res = await fetch('/api/config');
       const cfg = await res.json();
       if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return; // skip auth if not configured
+      if (!window.supabase || !window.supabase.createClient) return;
       sbClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
       const { data: { session } } = await sbClient.auth.getSession();
       if (!session) {
