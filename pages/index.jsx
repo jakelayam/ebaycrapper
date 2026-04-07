@@ -39,9 +39,12 @@ export default function Dashboard() {
   const [newExclude, setNewExclude] = useState('');
 
   const logRef = useRef(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
+  // Load auth + saved settings on mount
   useEffect(() => {
     (async () => {
+      let token = null;
       try {
         const res = await fetch('/api/config');
         const cfg = await res.json();
@@ -52,7 +55,40 @@ export default function Dashboard() {
         if (!session) { router.replace('/login'); return; }
         setUser(session.user);
         setAuthToken(session.access_token);
+        token = session.access_token;
       } catch (e) { /* skip auth in dev */ }
+
+      // Load saved settings
+      if (token) {
+        try {
+          const res = await fetch('/api/settings', { headers: { Authorization: 'Bearer ' + token } });
+          const data = await res.json();
+          if (data.settings) {
+            const s = data.settings;
+            if (s.thresholds) {
+              setThresh32(s.thresholds['32GB'] ?? 100);
+              setThresh64(s.thresholds['64GB'] ?? 200);
+              setThresh128(s.thresholds['128GB'] ?? 500);
+            }
+            if (s.capacities) {
+              setCap32(s.capacities.includes('32GB'));
+              setCap64(s.capacities.includes('64GB'));
+              setCap128(s.capacities.includes('128GB'));
+            }
+            if (s.conditions) {
+              setCondNew(s.conditions.includes('new'));
+              setCondUsed(s.conditions.includes('used'));
+              setCondRefurb(s.conditions.includes('refurbished'));
+            }
+            if (s.exclude_keywords) setExcludes(s.exclude_keywords);
+            if (s.max_pages != null) setMaxPages(s.max_pages);
+            if (s.send_to_sheets != null) setOptSheets(s.send_to_sheets);
+            if (s.send_to_discord != null) setOptDiscord(s.send_to_discord);
+          }
+        } catch (e) {}
+      }
+      setSettingsLoaded(true);
+
       // Check integrations
       try {
         const res = await fetch('/api/status');
@@ -61,6 +97,32 @@ export default function Dashboard() {
       } catch (e) {}
     })();
   }, [router]);
+
+  // Auto-save settings to Supabase when they change
+  useEffect(() => {
+    if (!settingsLoaded || !authToken) return;
+    const timeout = setTimeout(() => {
+      const capacities = [];
+      if (cap32) capacities.push('32GB');
+      if (cap64) capacities.push('64GB');
+      if (cap128) capacities.push('128GB');
+      const conditions = [];
+      if (condNew) conditions.push('new');
+      if (condUsed) conditions.push('used');
+      if (condRefurb) conditions.push('refurbished');
+
+      fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
+        body: JSON.stringify({
+          thresholds: { '32GB': thresh32, '64GB': thresh64, '128GB': thresh128 },
+          capacities, conditions, excludeKeywords: excludes,
+          maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord,
+        }),
+      }).catch(() => {});
+    }, 1000); // debounce 1s
+    return () => clearTimeout(timeout);
+  }, [thresh32, thresh64, thresh128, cap32, cap64, cap128, maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, authToken, settingsLoaded]);
 
   function log(msg, type = '') {
     setLogs(prev => [...prev, { msg: new Date().toLocaleTimeString() + '  ' + msg, type }]);

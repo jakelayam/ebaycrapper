@@ -195,52 +195,62 @@ async function fetchAndParse(url, capacity, options) {
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function scrapeEbay(options = {}) {
+async function scrapeCapacity(capacity, options) {
   const thresholds = options.thresholds || DEFAULT_THRESHOLDS;
-  const capacities = options.capacities || DEFAULT_CAPACITIES;
   const maxPages = options.maxPages || 1000;
+  const deals = [];
+  let scanned = 0;
+
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `https://www.ebay.com/sch/i.html?_nkw=DDR4+${capacity}&_sop=2&rt=nc&LH_BIN=1&_pgn=${page}`;
+
+    try {
+      console.log(`${capacity}: page ${page}...`);
+      const result = await fetchAndParse(url, capacity, { thresholds, ...options });
+
+      scanned += result.listingsOnPage;
+      deals.push(...result.deals);
+      console.log(`  => ${result.listingsOnPage} listings, ${result.deals.length} deals`);
+
+      if (result.listingsOnPage === 0) {
+        console.log(`${capacity}: no more results, done`);
+        break;
+      }
+
+      // No deals on this page and past page 1 — prices above threshold
+      if (result.deals.length === 0 && page > 1) {
+        console.log(`${capacity}: prices above threshold, done`);
+        break;
+      }
+
+      // Delay only when using browser locally (Vercel uses axios, no delay needed)
+      if (USE_BROWSER) await delay(1500);
+    } catch (err) {
+      console.error(`${capacity} page ${page} error: ${err.message}`);
+      break;
+    }
+  }
+
+  return { capacity, deals, scanned };
+}
+
+async function scrapeEbay(options = {}) {
+  const capacities = options.capacities || DEFAULT_CAPACITIES;
   const seenLinks = new Set();
   let allDeals = [];
   let totalScanned = 0;
 
-  // Scrape capacities one at a time to avoid rate limiting
-  const capacityResults = [];
-  for (const capacity of capacities) {
-    const deals = [];
-    let scanned = 0;
-
-    for (let page = 1; page <= maxPages; page++) {
-      const url = `https://www.ebay.com/sch/i.html?_nkw=DDR4+${capacity}&_sop=15&rt=nc&LH_BIN=1&_pgn=${page}`;
-
-      try {
-        console.log(`${capacity}: page ${page}...`);
-        const result = await fetchAndParse(url, capacity, { thresholds, ...options });
-
-        scanned += result.listingsOnPage;
-        deals.push(...result.deals);
-        console.log(`  => ${result.listingsOnPage} listings, ${result.deals.length} deals`);
-
-        // No more results from eBay
-        if (result.listingsOnPage === 0) {
-          console.log(`${capacity}: no more results, done`);
-          break;
-        }
-
-        // No deals on this page and past page 1 — prices above threshold
-        if (result.deals.length === 0 && page > 1) {
-          console.log(`${capacity}: prices above threshold, done`);
-          break;
-        }
-
-        await delay(1500); // courtesy delay between pages
-      } catch (err) {
-        console.error(`${capacity} page ${page} error: ${err.message}`);
-        break;
-      }
+  // Parallel on Vercel (fast axios), sequential locally (browser needs it)
+  let capacityResults;
+  if (USE_BROWSER) {
+    capacityResults = [];
+    for (const capacity of capacities) {
+      capacityResults.push(await scrapeCapacity(capacity, options));
     }
-
-    capacityResults.push({ capacity, deals, scanned });
-    console.log(`${capacity}: total ${deals.length} deals from ${scanned} listings`);
+  } else {
+    capacityResults = await Promise.all(
+      capacities.map(capacity => scrapeCapacity(capacity, options))
+    );
   }
 
   // Merge and dedup
