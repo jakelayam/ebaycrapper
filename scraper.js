@@ -197,7 +197,7 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function scrapeCapacity(capacity, options) {
   const thresholds = options.thresholds || DEFAULT_THRESHOLDS;
-  const maxPages = options.maxPages || 1000;
+  const maxPages = options.maxPages || 5;
   const deals = [];
   let scanned = 0;
 
