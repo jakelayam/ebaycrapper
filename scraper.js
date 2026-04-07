@@ -223,8 +223,8 @@ async function scrapeCapacity(capacity, options) {
         break;
       }
 
-      // Delay only when using browser locally (Vercel uses axios, no delay needed)
-      if (USE_BROWSER) await delay(1500);
+      // Shorter delay on CI, longer locally to avoid eBay blocking home IP
+      if (USE_BROWSER) await delay(process.env.CI ? 500 : 1500);
     } catch (err) {
       console.error(`${capacity} page ${page} error: ${err.message}`);
       break;

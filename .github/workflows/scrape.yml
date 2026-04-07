@@ -8,7 +8,7 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +37,10 @@ jobs:
             require('dotenv').config();
             process.env.CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
             const { scrapeAndNotify } = require('./scraper');
-            scrapeAndNotify({ sendToSheets: true, sendToDiscord: true })
+            scrapeAndNotify({ sendToSheets: false, sendToDiscord: true, maxPages: 10 })
               .then(r => {
                 console.log('Deals:', r.deals, '| Scanned:', r.scanned);
                 console.log('Discord:', r.discordStatus);
-                console.log('Sheets:', r.sheetsStatus);
               })
               .catch(e => { console.error(e); process.exit(1); });
           "
