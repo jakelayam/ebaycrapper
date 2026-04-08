@@ -270,7 +270,7 @@ export default function Dashboard() {
             if (status.conclusion === 'success') {
               log('Scrape completed! Loading results...', 'ok');
               await loadResults();
-              log('Results loaded. Also sent to Discord.', 'ok');
+              log('Scrape complete! Results loaded.', 'ok');
             } else {
               log('Workflow failed: ' + status.conclusion, 'err');
               setStatusBadge('Failed'); setRunStatus('Workflow failed');
