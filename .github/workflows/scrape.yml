@@ -1,9 +1,9 @@
-name: eBay DDR4 Scraper
+name: eBay Scraper
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 minutes
-  workflow_dispatch: {}      # Manual trigger button
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
 
 jobs:
   scrape:
@@ -34,64 +34,4 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          node -e "
-            require('dotenv').config();
-            process.env.CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
-            const { scrapeAndNotify } = require('./scraper');
-
-            // Load all active products from all users
-            let searchQueries;
-            const sbUrl2 = process.env.SUPABASE_URL;
-            const sbKey2 = process.env.SUPABASE_SERVICE_ROLE_KEY;
-            if (sbUrl2 && sbKey2) {
-              const { createClient: cc } = require('@supabase/supabase-js');
-              const sbc = cc(sbUrl2, sbKey2);
-              const { data: products } = await sbc.from('products').select('*').eq('active', true);
-              if (products && products.length > 0) {
-                searchQueries = products.map(p => ({ query: p.query, maxPrice: parseFloat(p.max_price), type: p.type }));
-                console.log('Loaded', searchQueries.length, 'products from Supabase');
-              }
-            }
-
-            scrapeAndNotify({ sendToSheets: false, sendToDiscord: true, maxPages: 10, searchQueries })
-              .then(async (r) => {
-                console.log('Deals:', r.deals, '| Scanned:', r.scanned);
-                console.log('Discord:', r.discordStatus);
-
-                // Save results to Supabase per user
-                const sbUrl = process.env.SUPABASE_URL;
-                const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-                if (sbUrl && sbKey) {
-                  const { createClient } = require('@supabase/supabase-js');
-                  const sb = createClient(sbUrl, sbKey);
-
-                  // Get all users who have products, save results for each
-                  const { data: users } = await sb.from('products').select('created_by').eq('active', true);
-                  const uniqueUsers = [...new Set((users || []).map(u => u.created_by).filter(Boolean))];
-
-                  for (const uid of uniqueUsers) {
-                    // Get this user's products
-                    const { data: userProducts } = await sb.from('products').select('*').eq('created_by', uid).eq('active', true);
-                    const userQueries = (userProducts || []).map(p => p.query.toLowerCase());
-
-                    // Filter results to only this user's products
-                    const userResults = (r.results || []).filter(deal =>
-                      userQueries.some(q => (deal.searchQuery || '').toLowerCase().includes(q) || q.includes((deal.searchQuery || '').toLowerCase()))
-                    );
-
-                    if (userResults.length > 0) {
-                      const { error } = await sb.from('scrape_results').insert({
-                        user_id: uid,
-                        deals: userResults.length,
-                        scanned: r.scanned,
-                        results: userResults,
-                      });
-                      if (error) console.error('Save error for user', uid, error.message);
-                      else console.log('Saved', userResults.length, 'results for user', uid);
-                    }
-                  }
-                }
-              })
-              .catch(e => { console.error(e); process.exit(1); });
-          "
+        run: node run-scrape.js
