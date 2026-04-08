@@ -38,6 +38,7 @@ export default function Dashboard() {
   const [newQuery, setNewQuery] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState(100);
   const [newType, setNewType] = useState('general');
+  const [discordWebhook, setDiscordWebhook] = useState('');
 
   const logRef = useRef(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -77,6 +78,7 @@ export default function Dashboard() {
             if (s.max_pages != null) setMaxPages(s.max_pages);
             if (s.send_to_sheets != null) setOptSheets(s.send_to_sheets);
             if (s.send_to_discord != null) setOptDiscord(s.send_to_discord);
+            if (s.discord_webhook) setDiscordWebhook(s.discord_webhook);
           }
         } catch (e) {}
       }
@@ -110,13 +112,13 @@ export default function Dashboard() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
         body: JSON.stringify({
-          conditions, excludeKeywords: excludes,
+          conditions, excludeKeywords: excludes, discordWebhook,
           maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord,
         }),
       }).catch(() => {});
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, authToken, settingsLoaded]);
+  }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, discordWebhook, authToken, settingsLoaded]);
 
   async function loadProducts() {
     try {
@@ -387,19 +389,21 @@ export default function Dashboard() {
                   placeholder="Search eBay for anything... e.g. Better Pack 555"
                   className="w-full px-3 py-2.5 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 placeholder:text-gray-600" />
                 <div className="flex gap-2">
-                  <div className="flex-1">
+                  <div className={isAdmin ? "flex-1" : "w-full"}>
                     <label className="text-[10px] text-gray-500 uppercase tracking-wider">Max Price ($)</label>
                     <input type="number" value={newMaxPrice} onChange={e => setNewMaxPrice(parseInt(e.target.value) || 0)} min={1}
                       className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1" />
                   </div>
-                  <div className="flex-1">
-                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Type</label>
-                    <select value={isAdmin ? newType : 'general'} onChange={e => setNewType(e.target.value)} disabled={!isAdmin}
-                      className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1 disabled:opacity-50">
-                      <option value="general">General (total price)</option>
-                      {isAdmin && <option value="ram">RAM (per-stick price)</option>}
-                    </select>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-500 uppercase tracking-wider">Type</label>
+                      <select value={newType} onChange={e => setNewType(e.target.value)}
+                        className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1">
+                        <option value="general">General (total price)</option>
+                        <option value="ram">RAM (per-stick price)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <button onClick={addProduct}
                   className="w-full py-2.5 bg-violet-600/15 hover:bg-violet-600/25 text-violet-400 rounded-lg text-sm font-semibold border border-violet-500/20 flex items-center justify-center gap-1.5"><Plus className="w-4 h-4" /> Add Product</button>
@@ -443,11 +447,13 @@ export default function Dashboard() {
                 <button onClick={addExclude} className="px-3 py-1.5 bg-dark-surface2 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
               </div>
             </div>
-            <div className="border-t border-dark-border pt-4">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">RAM Type</h3>
-              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/25">DDR4 Only</span>
-              <p className="text-[10px] text-gray-600 mt-2">DDR3, DDR5, GDDR, Optane auto-excluded</p>
-            </div>
+            {isAdmin && (
+              <div className="border-t border-dark-border pt-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">RAM Type</h3>
+                <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/25">DDR4 Only</span>
+                <p className="text-[10px] text-gray-600 mt-2">DDR3, DDR5, GDDR, Optane auto-excluded</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -455,18 +461,34 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
           <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Zap className="w-3.5 h-3.5" /> Integrations</h2>
-            {[{ icon: MessageSquare, name: 'Discord Webhook', sub: '#ddr4-ram', ok: integrations.discord },
-              { icon: FileSpreadsheet, name: 'Google Sheets', ok: integrations.sheets },
-            ].map((int, i) => (
-              <div key={i} className="flex items-center justify-between py-3 border-b border-dark-border last:border-0">
-                <div className="flex items-center gap-2.5 text-sm font-medium">
-                  <div className={`w-2 h-2 rounded-full ${int.ok ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                  <int.icon className="w-4 h-4 text-gray-500" /> {int.name}
-                  {int.sub && <span className="text-[10px] text-gray-600">{int.sub}</span>}
+            {isAdmin ? (
+              <>
+                {[{ icon: MessageSquare, name: 'Discord Webhook', sub: '#ddr4-ram', ok: integrations.discord },
+                  { icon: FileSpreadsheet, name: 'Google Sheets', ok: integrations.sheets },
+                ].map((int, i) => (
+                  <div key={i} className="flex items-center justify-between py-3 border-b border-dark-border last:border-0">
+                    <div className="flex items-center gap-2.5 text-sm font-medium">
+                      <div className={`w-2 h-2 rounded-full ${int.ok ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                      <int.icon className="w-4 h-4 text-gray-500" /> {int.name}
+                      {int.sub && <span className="text-[10px] text-gray-600">{int.sub}</span>}
+                    </div>
+                    <Badge ok={int.ok} label={int.ok ? 'Connected' : 'Not configured'} />
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <MessageSquare className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium">Your Discord Webhook</span>
+                  <div className={`w-2 h-2 rounded-full ${discordWebhook ? 'bg-emerald-400' : 'bg-red-400'}`} />
                 </div>
-                <Badge ok={int.ok} label={int.ok ? 'Connected' : 'Not configured'} />
+                <input type="text" value={discordWebhook} onChange={e => setDiscordWebhook(e.target.value)}
+                  placeholder="https://discord.com/api/webhooks/..."
+                  className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-xs text-white outline-none focus:border-violet-500 placeholder:text-gray-600" />
+                <p className="text-[10px] text-gray-600 mt-2">Get this from Discord: Server Settings &gt; Integrations &gt; Webhooks &gt; Copy URL</p>
               </div>
-            ))}
+            )}
           </div>
           <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Settings className="w-3.5 h-3.5" /> Output Options</h2>
