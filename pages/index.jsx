@@ -91,11 +91,9 @@ export default function Dashboard() {
         setIntegrations(data);
       } catch (e) {}
 
-      // Load products from database
-      loadProducts();
-
-      // Load latest scrape results from Supabase
-      loadResults();
+      // Load products and results (pass token directly since state isn't set yet)
+      loadProducts(token);
+      loadResults(token);
     })();
   }, [router]);
 
@@ -120,10 +118,11 @@ export default function Dashboard() {
     return () => clearTimeout(timeout);
   }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, discordWebhook, authToken, settingsLoaded]);
 
-  async function loadProducts() {
+  async function loadProducts(tokenOverride) {
     try {
+      const tk = tokenOverride || authToken;
       const headers = {};
-      if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      if (tk) headers['Authorization'] = 'Bearer ' + tk;
       const res = await fetch('/api/products', { headers });
       const data = await res.json();
       if (data.products && data.products.length > 0) {
@@ -176,10 +175,11 @@ export default function Dashboard() {
     log('Removed: ' + product.query, 'info');
   }
 
-  async function loadResults() {
+  async function loadResults(tokenOverride) {
     try {
+      const tk = tokenOverride || authToken;
       const headers = {};
-      if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      if (tk) headers['Authorization'] = 'Bearer ' + tk;
       const res = await fetch('/api/results', { headers });
       const data = await res.json();
       if (data.results && data.results.length > 0) {
@@ -192,10 +192,11 @@ export default function Dashboard() {
     } catch (e) {}
   }
 
-  async function loadHistory() {
+  async function loadHistory(tokenOverride) {
     try {
+      const tk = tokenOverride || authToken;
       const headers = {};
-      if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      if (tk) headers['Authorization'] = 'Bearer ' + tk;
       const res = await fetch('/api/results?all=true', { headers });
       const data = await res.json();
       if (data.history) {
