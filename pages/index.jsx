@@ -328,42 +328,38 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Pipeline */}
-        <div className="bg-dark-surface border border-dark-border rounded-xl p-6 mb-5">
-          <button onClick={() => setPipelineOpen(!pipelineOpen)} className="flex items-center justify-between w-full text-left">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Logic Flow — How It Works</h2>
-            <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${pipelineOpen ? 'rotate-90' : ''}`} />
-          </button>
-          {pipelineOpen && (
-            <div className="mt-4">
-              <div className="flex gap-0 overflow-x-auto">
-                {[
-                  { n: 'Step 1', t: 'Scrape eBay', d: 'Search DDR4 32/64/128GB, sorted lowest price', icon: Search },
-                  { n: 'Step 2', t: 'Parse Listings', d: 'Extract title, price, condition. Detect multi-stick kits', icon: Cpu },
-                  { n: 'Step 3', t: 'Calculate Cost', d: 'Per-stick = total / sticks. 4x16GB = 64GB total', icon: DollarSign },
-                  { n: 'Step 4', t: 'Filter & Sort', d: 'Threshold, excludes, reject auctions. Cheapest first', icon: Filter },
-                  { n: 'Step 5', t: 'Alert & Log', d: 'Discord #ddr4-ram + Google Sheets auto-log', icon: Bell },
-                ].map((step, i) => (
-                  <div key={i} className="flex items-stretch">
-                    <div className="min-w-[140px] bg-dark-surface2 rounded-lg p-3.5 text-center">
-                      <step.icon className="w-4 h-4 text-violet-400 mx-auto mb-1" />
-                      <div className="text-[10px] text-violet-400 font-bold uppercase tracking-wider">{step.n}</div>
-                      <div className="text-xs font-semibold mt-0.5">{step.t}</div>
-                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">{step.d}</div>
+        {/* Pipeline — admin only */}
+        {isAdmin && (
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 mb-5">
+            <button onClick={() => setPipelineOpen(!pipelineOpen)} className="flex items-center justify-between w-full text-left">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Logic Flow — How It Works</h2>
+              <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${pipelineOpen ? 'rotate-90' : ''}`} />
+            </button>
+            {pipelineOpen && (
+              <div className="mt-4">
+                <div className="flex gap-0 overflow-x-auto">
+                  {[
+                    { n: 'Step 1', t: 'Scrape eBay', d: 'Search your products, sorted lowest price', icon: Search },
+                    { n: 'Step 2', t: 'Parse Listings', d: 'Extract title, price, condition from results', icon: Cpu },
+                    { n: 'Step 3', t: 'Price Check', d: 'Compare price against your max threshold', icon: DollarSign },
+                    { n: 'Step 4', t: 'Filter & Sort', d: 'Excludes, conditions, BIN only. Cheapest first', icon: Filter },
+                    { n: 'Step 5', t: 'Alert & Log', d: 'Discord webhook + results saved to dashboard', icon: Bell },
+                  ].map((step, i) => (
+                    <div key={i} className="flex items-stretch">
+                      <div className="min-w-[140px] bg-dark-surface2 rounded-lg p-3.5 text-center">
+                        <step.icon className="w-4 h-4 text-violet-400 mx-auto mb-1" />
+                        <div className="text-[10px] text-violet-400 font-bold uppercase tracking-wider">{step.n}</div>
+                        <div className="text-xs font-semibold mt-0.5">{step.t}</div>
+                        <div className="text-[10px] text-gray-500 mt-1 leading-tight">{step.d}</div>
+                      </div>
+                      {i < 4 && <div className="flex items-center px-1.5 text-dark-border">&rarr;</div>}
                     </div>
-                    {i < 4 && <div className="flex items-center px-1.5 text-dark-border">&rarr;</div>}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-              <div className="mt-4 p-3 bg-dark-surface2 rounded-lg text-xs">
-                <span className="text-violet-400 font-semibold">Multi-Lot Example:</span>
-                <span className="text-gray-500 ml-2">&quot;4x16GB DDR4 Kit&quot; at </span><span className="text-emerald-400">$600</span>
-                <span className="text-gray-500"> → 4 sticks × 16GB = 64GB → $600/4 = </span><span className="text-emerald-400 font-semibold">$150/stick</span>
-                <span className="text-gray-500"> &lt; $200 = </span><span className="text-emerald-400">DEAL</span>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Config Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
