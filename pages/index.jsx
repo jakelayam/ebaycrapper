@@ -317,7 +317,6 @@ export default function Dashboard() {
             <p className="text-xs text-gray-500 mt-0.5">Automated deal hunter — scrape, filter, alert</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">DDR4 Only</span>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">Buy It Now</span>
             <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${statusBadge === 'Idle' ? 'bg-red-500/15 text-red-400' : statusBadge === 'Running' ? 'bg-yellow-500/15 text-yellow-400' : statusBadge === 'Error' ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>{statusBadge}</span>
             {user && <>
@@ -447,13 +446,6 @@ export default function Dashboard() {
                 <button onClick={addExclude} className="px-3 py-1.5 bg-dark-surface2 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
               </div>
             </div>
-            {isAdmin && (
-              <div className="border-t border-dark-border pt-4">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">RAM Type</h3>
-                <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/25">DDR4 Only</span>
-                <p className="text-[10px] text-gray-600 mt-2">DDR3, DDR5, GDDR, Optane auto-excluded</p>
-              </div>
-            )}
           </div>
         </div>
 
