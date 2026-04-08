@@ -12,6 +12,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [sb, setSb] = useState(null);
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState('customer');
   const [authToken, setAuthToken] = useState(null);
   const [lastResults, setLastResults] = useState([]);
   const [running, setRunning] = useState(false);
@@ -54,6 +55,7 @@ export default function Dashboard() {
         const { data: { session } } = await client.auth.getSession();
         if (!session) { router.replace('/login'); return; }
         setUser(session.user);
+        setUserRole(session.user?.user_metadata?.role || 'customer');
         setAuthToken(session.access_token);
         token = session.access_token;
       } catch (e) { /* skip auth in dev */ }
@@ -289,6 +291,7 @@ export default function Dashboard() {
     router.push('/login');
   }
 
+  const isAdmin = userRole === 'admin';
   const cheapest = stats?.results?.length ? '$' + Math.min(...stats.results.map(r => parseFloat(r.price))).toFixed(2) : '--';
   const productCount = stats?.results?.length ? new Set(stats.results.map(r => r.searchQuery)).size : 0;
 
@@ -311,7 +314,10 @@ export default function Dashboard() {
             <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">DDR4 Only</span>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/15 text-blue-400">Buy It Now</span>
             <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${statusBadge === 'Idle' ? 'bg-red-500/15 text-red-400' : statusBadge === 'Running' ? 'bg-yellow-500/15 text-yellow-400' : statusBadge === 'Error' ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>{statusBadge}</span>
-            {user && <span className="text-xs text-gray-500 ml-2">{user.email}</span>}
+            {user && <>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${isAdmin ? 'bg-amber-500/15 text-amber-400' : 'bg-gray-500/15 text-gray-400'}`}>{isAdmin ? 'Admin' : 'Customer'}</span>
+              <span className="text-xs text-gray-500">{user.email}</span>
+            </>}
             <button onClick={handleLogout} className="ml-1 p-1.5 rounded-lg border border-dark-border text-gray-500 hover:text-white hover:border-gray-500 transition-colors"><LogOut className="w-3.5 h-3.5" /></button>
           </div>
         </header>
@@ -384,10 +390,10 @@ export default function Dashboard() {
                   </div>
                   <div className="flex-1">
                     <label className="text-[10px] text-gray-500 uppercase tracking-wider">Type</label>
-                    <select value={newType} onChange={e => setNewType(e.target.value)}
-                      className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1">
+                    <select value={isAdmin ? newType : 'general'} onChange={e => setNewType(e.target.value)} disabled={!isAdmin}
+                      className="w-full px-3 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 mt-1 disabled:opacity-50">
                       <option value="general">General (total price)</option>
-                      <option value="ram">RAM (per-stick price)</option>
+                      {isAdmin && <option value="ram">RAM (per-stick price)</option>}
                     </select>
                   </div>
                 </div>
