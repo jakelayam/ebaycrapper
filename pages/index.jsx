@@ -31,11 +31,7 @@ export default function Dashboard() {
   const [optDiscord, setOptDiscord] = useState(true);
   const [excludes, setExcludes] = useState([]);
   const [newExclude, setNewExclude] = useState('');
-  const [searchQueries, setSearchQueries] = useState([
-    { query: 'DDR4 32GB', maxPrice: 100, type: 'ram' },
-    { query: 'DDR4 64GB', maxPrice: 200, type: 'ram' },
-    { query: 'DDR4 128GB', maxPrice: 500, type: 'ram' },
-  ]);
+  const [searchQueries, setSearchQueries] = useState([]);
   const [newQuery, setNewQuery] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState(100);
   const [newType, setNewType] = useState('general');
@@ -89,6 +85,9 @@ export default function Dashboard() {
         setIntegrations(data);
       } catch (e) {}
 
+      // Load products from database
+      loadProducts();
+
       // Load latest scrape results from Supabase
       loadResults();
     })();
@@ -114,6 +113,62 @@ export default function Dashboard() {
     }, 1000);
     return () => clearTimeout(timeout);
   }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, searchQueries, authToken, settingsLoaded]);
+
+  async function loadProducts() {
+    try {
+      const headers = {};
+      if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      const res = await fetch('/api/products', { headers });
+      const data = await res.json();
+      if (data.products && data.products.length > 0) {
+        setSearchQueries(data.products.map(p => ({
+          id: p.id,
+          query: p.query,
+          maxPrice: parseFloat(p.max_price),
+          type: p.type,
+        })));
+      }
+    } catch (e) {}
+  }
+
+  async function addProduct() {
+    if (!newQuery.trim()) return;
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST', headers,
+        body: JSON.stringify({ query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }),
+      });
+      const data = await res.json();
+      if (data.product) {
+        setSearchQueries(prev => [...prev, {
+          id: data.product.id,
+          query: data.product.query,
+          maxPrice: parseFloat(data.product.max_price),
+          type: data.product.type,
+        }]);
+        log('Added product: ' + newQuery.trim(), 'ok');
+        setNewQuery('');
+      } else {
+        log('Failed to add: ' + (data.error || 'unknown'), 'err');
+      }
+    } catch (e) { log('Error: ' + e.message, 'err'); }
+  }
+
+  async function removeProduct(idx) {
+    const product = searchQueries[idx];
+    if (product.id) {
+      const headers = { 'Content-Type': 'application/json' };
+      if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      await fetch('/api/products', {
+        method: 'DELETE', headers,
+        body: JSON.stringify({ id: product.id }),
+      }).catch(() => {});
+    }
+    setSearchQueries(searchQueries.filter((_, j) => j !== idx));
+    log('Removed: ' + product.query, 'info');
+  }
 
   async function loadResults() {
     try {
@@ -290,7 +345,7 @@ export default function Dashboard() {
                   <span className="flex-1 text-sm text-white font-medium">{sq.query}</span>
                   <span className="text-xs text-emerald-400 font-semibold whitespace-nowrap">&lt; ${sq.maxPrice}</span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${sq.type === 'ram' ? 'bg-violet-500/15 text-violet-400' : 'bg-blue-500/15 text-blue-400'}`}>{sq.type === 'ram' ? 'RAM ($/stick)' : 'General'}</span>
-                  <button onClick={() => setSearchQueries(searchQueries.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => removeProduct(i)} className="text-gray-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
@@ -298,7 +353,7 @@ export default function Dashboard() {
               <h3 className="text-xs font-semibold text-gray-400 mb-3">Add New Product</h3>
               <div className="space-y-2">
                 <input type="text" value={newQuery} onChange={e => setNewQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }]); setNewQuery(''); } }}
+                  onKeyDown={e => { if (e.key === 'Enter') addProduct(); }}
                   placeholder="Search eBay for anything... e.g. Better Pack 555"
                   className="w-full px-3 py-2.5 bg-dark-bg border border-dark-border rounded-lg text-sm text-white outline-none focus:border-violet-500 placeholder:text-gray-600" />
                 <div className="flex gap-2">
@@ -316,7 +371,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                 </div>
-                <button onClick={() => { if (newQuery.trim()) { setSearchQueries([...searchQueries, { query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }]); setNewQuery(''); } }}
+                <button onClick={addProduct}
                   className="w-full py-2.5 bg-violet-600/15 hover:bg-violet-600/25 text-violet-400 rounded-lg text-sm font-semibold border border-violet-500/20 flex items-center justify-center gap-1.5"><Plus className="w-4 h-4" /> Add Product</button>
               </div>
             </div>
