@@ -6,33 +6,39 @@ export default async function handler(req, res) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url) return res.status(200).json({ results: null });
 
+  // Must have auth token
   const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token || !anonKey) return res.status(200).json({ results: null });
 
-  // Get user ID from token
-  let userId = null;
-  if (token && anonKey) {
-    const authSb = createClient(url, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
-    const { data: { user } } = await authSb.auth.getUser(token);
-    userId = user?.id;
-  }
+  const authSb = createClient(url, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+  const { data: { user } } = await authSb.auth.getUser(token);
+  if (!user) return res.status(200).json({ results: null });
 
-  // Use service key for queries (bypasses RLS but we filter manually by user_id)
+  const userId = user.id;
   const sb = createClient(url, serviceKey || anonKey);
-
   const all = req.query.all === 'true';
 
   if (all) {
-    let query = sb.from('scrape_results').select('*').order('created_at', { ascending: false }).limit(50);
-    if (userId) query = query.eq('user_id', userId);
-    const { data, error } = await query;
+    // Strictly only this user's results
+    const { data, error } = await sb
+      .from('scrape_results')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
     if (error) return res.status(200).json({ history: [] });
     return res.status(200).json({ history: data });
   }
 
-  // Latest single result for this user
-  let query = sb.from('scrape_results').select('*').order('created_at', { ascending: false }).limit(1);
-  if (userId) query = query.eq('user_id', userId);
-  const { data, error } = await query.single();
+  // Latest single result for this user only
+  const { data, error } = await sb
+    .from('scrape_results')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
 
   if (error) return res.status(200).json({ results: null });
 
