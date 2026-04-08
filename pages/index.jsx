@@ -21,6 +21,8 @@ export default function Dashboard() {
   const [integrations, setIntegrations] = useState({ discord: false, sheets: false });
   const [logs, setLogs] = useState([{ msg: 'Ready. Configure settings and run the scraper.', type: 'info' }]);
   const [pipelineOpen, setPipelineOpen] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState([]);
 
   // Config
   const [maxPages, setMaxPages] = useState(10);
@@ -180,6 +182,24 @@ export default function Dashboard() {
         const time = new Date(data.timestamp).toLocaleTimeString();
         setStatusBadge(data.deals + ' deals');
         setRunStatus('Last scrape: ' + data.deals + ' deals at ' + time);
+      }
+    } catch (e) {}
+  }
+
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/results?all=true');
+      const data = await res.json();
+      if (data.history) {
+        // Merge all results from all runs into one flat list
+        const allResults = [];
+        data.history.forEach(run => {
+          (run.results || []).forEach(deal => {
+            allResults.push({ ...deal, scrapeDate: run.created_at });
+          });
+        });
+        setHistory(allResults);
+        setShowHistory(true);
       }
     } catch (e) {}
   }
@@ -484,29 +504,41 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
               <div>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Results</h2>
-                <div className="text-2xl font-bold">{lastResults.length} <span className="text-sm text-gray-500 font-normal">deals found</span></div>
+                <div className="text-2xl font-bold">{showHistory ? history.length : lastResults.length} <span className="text-sm text-gray-500 font-normal">{showHistory ? 'total from all scrapes' : 'deals found'}</span></div>
               </div>
-              <button onClick={exportCSV} className="px-3 py-1.5 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white hover:border-gray-500 transition-colors flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5" /> Export CSV
-              </button>
+              <div className="flex gap-2">
+                {showHistory ? (
+                  <button onClick={() => setShowHistory(false)} className="px-3 py-1.5 bg-violet-600/15 text-violet-400 border border-violet-500/20 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" /> Show Latest
+                  </button>
+                ) : (
+                  <button onClick={loadHistory} className="px-3 py-1.5 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white hover:border-gray-500 transition-colors flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" /> View All History
+                  </button>
+                )}
+                <button onClick={exportCSV} className="px-3 py-1.5 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white hover:border-gray-500 transition-colors flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> Export CSV
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto rounded-lg border border-dark-border max-h-[500px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-dark-surface2 sticky top-0 z-10">
-                    {['Product', 'Title', 'Price', 'Condition', 'Link'].map(h => (
+                    {[...(showHistory ? ['Date'] : []), 'Product', 'Title', 'Price', 'Condition', 'Link'].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {lastResults.map((d, i) => {
+                  {(showHistory ? history : lastResults).map((d, i) => {
                     const condColor = (d.condition || '').toLowerCase().includes('new') && !(d.condition || '').toLowerCase().includes('pre-owned') ? 'bg-emerald-500/10 text-emerald-400' : (d.condition || '').toLowerCase().includes('refurb') ? 'bg-yellow-500/10 text-yellow-400' : 'bg-blue-500/10 text-blue-400';
                     const hasLink = d.link && d.link !== 'N/A';
                     const title = d.title?.length > 70 ? d.title.substring(0, 70) + '...' : d.title;
                     const priceLabel = d.type === 'ram' && d.stickCount > 1 ? `$${d.price} ($${d.perStickCost}/stick × ${d.stickCount})` : `$${d.price}`;
                     return (
                       <tr key={i} className="hover:bg-violet-500/[0.03] border-t border-dark-border">
+                        {showHistory && <td className="px-3 py-2.5 text-[10px] text-gray-500 whitespace-nowrap">{new Date(d.scrapeDate).toLocaleDateString()} {new Date(d.scrapeDate).toLocaleTimeString()}</td>}
                         <td className="px-3 py-2.5"><span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-violet-500/15 text-violet-400">{d.searchQuery || d.capacity || '?'}</span></td>
                         <td className="px-3 py-2.5 max-w-[350px] truncate">{hasLink ? <a href={d.link} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline" title={d.title}>{title}</a> : title}</td>
                         <td className="px-3 py-2.5 text-emerald-400 font-semibold whitespace-nowrap">{priceLabel}</td>
