@@ -208,7 +208,7 @@ export default function Dashboard() {
   async function loadResults(tokenOverride) {
     try {
       let tk = tokenOverride || authToken;
-      if (!tk && sb) {
+      if (sb) {
         const { data: { session } } = await sb.auth.getSession();
         if (session) { tk = session.access_token; setAuthToken(tk); }
       }
@@ -226,21 +226,15 @@ export default function Dashboard() {
     } catch (e) {}
   }
 
-  async function loadHistory(tokenOverride) {
+  async function loadHistory() {
     try {
-      const tk = tokenOverride || authToken;
-      if (!tk) {
-        // Try to get fresh token from Supabase
-        if (sb) {
-          const { data: { session } } = await sb.auth.getSession();
-          if (session) {
-            const freshToken = session.access_token;
-            setAuthToken(freshToken);
-            return loadHistory(freshToken);
-          }
-        }
-        return;
+      // Always get fresh token
+      let tk = authToken;
+      if (sb) {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) { tk = session.access_token; setAuthToken(tk); }
       }
+      if (!tk) return;
       const res = await fetch('/api/results?all=true', { headers: { Authorization: 'Bearer ' + tk } });
       const data = await res.json();
       const allResults = [];
