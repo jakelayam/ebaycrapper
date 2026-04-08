@@ -378,7 +378,7 @@ export default function Dashboard() {
             <div className="mt-5">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Pages to Scan</h3>
               <div className="flex items-center gap-3">
-                <input type="range" min={1} max={20} value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))} className="flex-1 accent-violet-500" />
+                <input type="range" min={1} max={200} value={maxPages} onChange={e => setMaxPages(parseInt(e.target.value))} className="flex-1 accent-violet-500" />
                 <span className="text-sm font-semibold min-w-[70px]">{maxPages} pages</span>
               </div>
               <p className="text-[10px] text-gray-600 mt-1">~60 listings/page per product. Auto-stops when prices exceed max.</p>
