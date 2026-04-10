@@ -30,13 +30,14 @@ export default async function handler(req, res) {
 
   // POST — add product owned by this user
   if (req.method === 'POST') {
-    const { query, maxPrice, type } = req.body;
+    const { query, maxPrice, type, excludeKeywords } = req.body;
     if (!query) return res.status(400).json({ error: 'query is required' });
 
     const { data, error } = await supabase.from('products').insert({
       query,
       max_price: maxPrice || 9999,
       type: type || 'general',
+      exclude_keywords: excludeKeywords || [],
       created_by: user.id,
     }).select();
 
@@ -46,13 +47,14 @@ export default async function handler(req, res) {
 
   // PUT — update own product
   if (req.method === 'PUT') {
-    const { id, query, maxPrice, type } = req.body;
+    const { id, query, maxPrice, type, excludeKeywords } = req.body;
     if (!id) return res.status(400).json({ error: 'id is required' });
 
     const updates = {};
     if (query !== undefined) updates.query = query;
     if (maxPrice !== undefined) updates.max_price = maxPrice;
     if (type !== undefined) updates.type = type;
+    if (excludeKeywords !== undefined) updates.exclude_keywords = excludeKeywords;
 
     const { data, error } = await supabase
       .from('products')

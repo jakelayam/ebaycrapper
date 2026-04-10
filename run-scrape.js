@@ -33,6 +33,7 @@ async function main() {
       query: p.query,
       maxPrice: parseFloat(p.max_price),
       type: p.type,
+      excludeKeywords: p.exclude_keywords || [],
     }));
     console.log('Products:', searchQueries.map(q => q.query).join(', '));
 

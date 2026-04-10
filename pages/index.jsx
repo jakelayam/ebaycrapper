@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [editQuery, setEditQuery] = useState('');
   const [editMaxPrice, setEditMaxPrice] = useState(0);
   const [editType, setEditType] = useState('general');
+  const [editExcludes, setEditExcludes] = useState([]);
+  const [editNewExclude, setEditNewExclude] = useState('');
 
   const logRef = useRef(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -135,6 +137,7 @@ export default function Dashboard() {
           query: p.query,
           maxPrice: parseFloat(p.max_price),
           type: p.type,
+          excludeKeywords: p.exclude_keywords || [],
         })));
       }
     } catch (e) {}
@@ -147,7 +150,7 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/products', {
         method: 'POST', headers,
-        body: JSON.stringify({ query: newQuery.trim(), maxPrice: newMaxPrice, type: newType }),
+        body: JSON.stringify({ query: newQuery.trim(), maxPrice: newMaxPrice, type: newType, excludeKeywords: [] }),
       });
       const data = await res.json();
       if (data.product) {
@@ -156,6 +159,7 @@ export default function Dashboard() {
           query: data.product.query,
           maxPrice: parseFloat(data.product.max_price),
           type: data.product.type,
+          excludeKeywords: data.product.exclude_keywords || [],
         }]);
         log('Added product: ' + newQuery.trim(), 'ok');
         setNewQuery('');
@@ -185,6 +189,18 @@ export default function Dashboard() {
     setEditQuery(sq.query);
     setEditMaxPrice(sq.maxPrice);
     setEditType(sq.type);
+    setEditExcludes(sq.excludeKeywords || []);
+    setEditNewExclude('');
+  }
+
+  function addEditExclude() {
+    const v = editNewExclude.trim().toLowerCase();
+    if (v && !editExcludes.includes(v)) setEditExcludes([...editExcludes, v]);
+    setEditNewExclude('');
+  }
+
+  function removeEditExclude(i) {
+    setEditExcludes(editExcludes.filter((_, j) => j !== i));
   }
 
   async function saveEdit() {
@@ -195,11 +211,11 @@ export default function Dashboard() {
       if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
       await fetch('/api/products', {
         method: 'PUT', headers,
-        body: JSON.stringify({ id: product.id, query: editQuery, maxPrice: editMaxPrice, type: editType }),
+        body: JSON.stringify({ id: product.id, query: editQuery, maxPrice: editMaxPrice, type: editType, excludeKeywords: editExcludes }),
       }).catch(() => {});
     }
     const updated = [...searchQueries];
-    updated[editIdx] = { ...updated[editIdx], query: editQuery, maxPrice: editMaxPrice, type: editType };
+    updated[editIdx] = { ...updated[editIdx], query: editQuery, maxPrice: editMaxPrice, type: editType, excludeKeywords: editExcludes };
     setSearchQueries(updated);
     setEditIdx(null);
     log('Updated: ' + editQuery, 'ok');
@@ -424,7 +440,24 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500 uppercase">Exclude Keywords (per product)</label>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5 mb-1.5">
+                        {editExcludes.map((kw, j) => (
+                          <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-red-500/10 text-red-400 border border-red-500/25">
+                            {kw} <button onClick={() => removeEditExclude(j)} className="opacity-60 hover:opacity-100"><X className="w-2.5 h-2.5" /></button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input type="text" value={editNewExclude} onChange={e => setEditNewExclude(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditExclude())}
+                          placeholder="Add keyword..."
+                          className="flex-1 px-2 py-1 bg-dark-bg border border-dashed border-dark-border rounded text-xs text-white outline-none focus:border-violet-500" />
+                        <button onClick={addEditExclude} className="px-2 py-1 bg-dark-bg border border-dark-border rounded text-xs text-gray-500 hover:text-white"><Plus className="w-3 h-3" /></button>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
                       <button onClick={saveEdit} className="flex-1 py-1.5 bg-emerald-600/20 text-emerald-400 rounded-lg text-xs font-semibold flex items-center justify-center gap-1"><Check className="w-3.5 h-3.5" /> Save</button>
                       <button onClick={() => setEditIdx(null)} className="flex-1 py-1.5 bg-dark-bg border border-dark-border text-gray-500 rounded-lg text-xs font-semibold flex items-center justify-center gap-1"><X className="w-3.5 h-3.5" /> Cancel</button>
                     </div>
@@ -432,7 +465,12 @@ export default function Dashboard() {
                 ) : (
                   <div key={i} className="flex items-center gap-2 bg-dark-surface2 rounded-lg px-3 py-2.5">
                     <Search className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                    <span className="flex-1 text-sm text-white font-medium">{sq.query}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white font-medium truncate">{sq.query}</div>
+                      {sq.excludeKeywords && sq.excludeKeywords.length > 0 && (
+                        <div className="text-[10px] text-red-400/70 truncate">excludes: {sq.excludeKeywords.join(', ')}</div>
+                      )}
+                    </div>
                     <span className="text-xs text-emerald-400 font-semibold whitespace-nowrap">&lt; ${sq.maxPrice}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${sq.type === 'ram' ? 'bg-violet-500/15 text-violet-400' : 'bg-blue-500/15 text-blue-400'}`}>{sq.type === 'ram' ? 'RAM ($/stick)' : 'General'}</span>
                     <button onClick={() => startEdit(i)} className="text-gray-600 hover:text-violet-400"><Pencil className="w-3.5 h-3.5" /></button>
@@ -479,32 +517,17 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Conditions */}
           <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Filter className="w-3.5 h-3.5" /> Filters & Exclusions</h2>
-            <div className="mb-4">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Conditions</h3>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Filter className="w-3.5 h-3.5" /> Conditions</h2>
+            <div className="mb-3">
+              <p className="text-[11px] text-gray-500 mb-3">Applied to all products. Exclude keywords are now per-product (click pencil icon on each product to edit).</p>
               <div className="flex gap-4">
                 {[[condNew, setCondNew, 'New'], [condUsed, setCondUsed, 'Used'], [condRefurb, setCondRefurb, 'Refurbished']].map(([v, s, l]) => (
                   <label key={l} className="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" checked={v} onChange={e => s(e.target.checked)} className="w-4 h-4 accent-violet-500" /> {l}
                   </label>
                 ))}
-              </div>
-            </div>
-            <div className="border-t border-dark-border pt-4 mb-4">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Exclude Keywords</h3>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {excludes.map((kw, i) => (
-                  <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/25">
-                    {kw} <button onClick={() => removeExclude(i)} className="opacity-60 hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input type="text" value={newExclude} onChange={e => setNewExclude(e.target.value)} onKeyDown={e => e.key === 'Enter' && addExclude()} placeholder="Add keyword..."
-                  className="px-3 py-1.5 bg-dark-bg border border-dashed border-dark-border rounded-lg text-xs text-gray-200 outline-none focus:border-violet-500 w-32" />
-                <button onClick={addExclude} className="px-3 py-1.5 bg-dark-surface2 border border-dark-border rounded-lg text-xs text-gray-500 hover:text-white flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>
               </div>
             </div>
           </div>

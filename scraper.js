@@ -101,7 +101,10 @@ function parseListings(html, searchQuery, options = {}) {
   const $ = cheerio.load(html);
   const maxPrice = searchQuery.maxPrice || 9999;
   const isRAM = searchQuery.type === 'ram';
-  const excludeKeywords = options.excludeKeywords || DEFAULT_EXCLUDE_KEYWORDS;
+  // Per-product excludes take precedence, fall back to global
+  const excludeKeywords = (searchQuery.excludeKeywords && searchQuery.excludeKeywords.length > 0)
+    ? searchQuery.excludeKeywords
+    : (options.excludeKeywords || DEFAULT_EXCLUDE_KEYWORDS);
   const conditions = options.conditions || DEFAULT_CONDITIONS;
   const deals = [];
 
