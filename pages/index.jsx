@@ -194,8 +194,11 @@ export default function Dashboard() {
   }
 
   function addEditExclude() {
-    const v = editNewExclude.trim().toLowerCase();
-    if (v && !editExcludes.includes(v)) setEditExcludes([...editExcludes, v]);
+    const input = editNewExclude.trim();
+    if (!input) return;
+    // Split on comma to support bulk add
+    const newKeywords = input.split(',').map(k => k.trim().toLowerCase()).filter(k => k && !editExcludes.includes(k));
+    if (newKeywords.length > 0) setEditExcludes([...editExcludes, ...newKeywords]);
     setEditNewExclude('');
   }
 
@@ -452,7 +455,7 @@ export default function Dashboard() {
                       <div className="flex gap-1.5">
                         <input type="text" value={editNewExclude} onChange={e => setEditNewExclude(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditExclude())}
-                          placeholder="Add keyword..."
+                          placeholder="laptop, desktop, broken..."
                           className="flex-1 px-2 py-1 bg-dark-bg border border-dashed border-dark-border rounded text-xs text-white outline-none focus:border-violet-500" />
                         <button onClick={addEditExclude} className="px-2 py-1 bg-dark-bg border border-dark-border rounded text-xs text-gray-500 hover:text-white"><Plus className="w-3 h-3" /></button>
                       </div>
