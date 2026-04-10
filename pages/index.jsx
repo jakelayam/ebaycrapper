@@ -377,7 +377,7 @@ export default function Dashboard() {
                     { n: 'Step 1', t: 'Scrape eBay', d: 'Search your products, sorted lowest price', icon: Search },
                     { n: 'Step 2', t: 'Parse Listings', d: 'Extract title, price, condition from results', icon: Cpu },
                     { n: 'Step 3', t: 'Price Check', d: 'Compare price against your max threshold', icon: DollarSign },
-                    { n: 'Step 4', t: 'Filter & Sort', d: 'Excludes, conditions, BIN only. Cheapest first', icon: Filter },
+                    { n: 'Step 4', t: 'Filter & Sort', d: 'Excludes, conditions, BIN only. Newly listed first', icon: Filter },
                     { n: 'Step 5', t: 'Alert & Log', d: 'Discord webhook + results saved to dashboard', icon: Bell },
                   ].map((step, i) => (
                     <div key={i} className="flex items-stretch">
