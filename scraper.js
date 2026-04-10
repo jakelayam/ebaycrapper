@@ -233,7 +233,7 @@ async function scrapeQuery(searchQuery, options) {
   let scanned = 0;
 
   for (let page = 1; page <= maxPages; page++) {
-    const url = `https://www.ebay.com/sch/i.html?_nkw=${encodedQuery}&_sop=2&rt=nc&LH_BIN=1&_pgn=${page}`;
+    const url = `https://www.ebay.com/sch/i.html?_nkw=${encodedQuery}&_sop=10&rt=nc&LH_BIN=1&_pgn=${page}`;
 
     try {
       console.log(`[${queryText}] page ${page}...`);
@@ -247,11 +247,8 @@ async function scrapeQuery(searchQuery, options) {
         console.log(`[${queryText}] no more results, done`);
         break;
       }
-
-      if (result.deals.length === 0 && page > 1) {
-        console.log(`[${queryText}] prices above max, done`);
-        break;
-      }
+      // Note: with newly-listed sort, we can't smart-stop on 0 deals
+      // because matching items could be on any page
 
       if (USE_BROWSER) await delay(process.env.CI ? 500 : 1500);
     } catch (err) {
@@ -312,7 +309,7 @@ async function scrapeAndNotify(options = {}) {
     return { deals: 0, scanned, results: [], sheetsStatus: 'skipped', discordStatus: 'skipped' };
   }
 
-  allDeals.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+  // Keep newly-listed order from eBay (no re-sort)
 
   let sheetsStatus = 'skipped';
   let discordStatus = 'skipped';
