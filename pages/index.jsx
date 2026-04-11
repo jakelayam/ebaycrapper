@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [optDiscord, setOptDiscord] = useState(true);
   const [excludes, setExcludes] = useState([]);
   const [newExclude, setNewExclude] = useState('');
+  const [binOnly, setBinOnly] = useState(true);
   const [searchQueries, setSearchQueries] = useState([]);
   const [newQuery, setNewQuery] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState(100);
@@ -85,6 +86,7 @@ export default function Dashboard() {
             if (s.send_to_sheets != null) setOptSheets(s.send_to_sheets);
             if (s.send_to_discord != null) setOptDiscord(s.send_to_discord);
             if (s.discord_webhook) setDiscordWebhook(s.discord_webhook);
+            if (s.bin_only != null) setBinOnly(s.bin_only);
           }
         } catch (e) {}
       }
@@ -116,13 +118,13 @@ export default function Dashboard() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
         body: JSON.stringify({
-          conditions, excludeKeywords: excludes, discordWebhook,
+          conditions, excludeKeywords: excludes, discordWebhook, binOnly,
           maxPages, sendToSheets: optSheets, sendToDiscord: optDiscord,
         }),
       }).catch(() => {});
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, discordWebhook, authToken, settingsLoaded]);
+  }, [maxPages, condNew, condUsed, condRefurb, optSheets, optDiscord, excludes, discordWebhook, binOnly, authToken, settingsLoaded]);
 
   async function loadProducts(tokenOverride) {
     try {
@@ -525,13 +527,23 @@ export default function Dashboard() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-4 flex items-center gap-2"><Filter className="w-3.5 h-3.5" /> Conditions</h2>
             <div className="mb-3">
               <p className="text-[11px] text-gray-500 mb-3">Applied to all products. Exclude keywords are now per-product (click pencil icon on each product to edit).</p>
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap">
                 {[[condNew, setCondNew, 'New'], [condUsed, setCondUsed, 'Used'], [condRefurb, setCondRefurb, 'Refurbished']].map(([v, s, l]) => (
                   <label key={l} className="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" checked={v} onChange={e => s(e.target.checked)} className="w-4 h-4 accent-violet-500" /> {l}
                   </label>
                 ))}
               </div>
+              {isAdmin && (
+                <div className="mt-4 pt-4 border-t border-dark-border">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Listing Type</h3>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={binOnly} onChange={e => setBinOnly(e.target.checked)} className="w-4 h-4 accent-violet-500" />
+                    <span>Buy It Now only</span>
+                    <span className="text-[10px] text-gray-500">(excludes auctions)</span>
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         </div>

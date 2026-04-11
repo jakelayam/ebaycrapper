@@ -39,6 +39,7 @@ export default async function handler(req, res) {
       exclude_keywords: body.excludeKeywords,
       conditions: body.conditions,
       discord_webhook: body.discordWebhook || null,
+      bin_only: body.binOnly !== false,
       max_pages: body.maxPages,
       send_to_sheets: body.sendToSheets,
       send_to_discord: body.sendToDiscord,

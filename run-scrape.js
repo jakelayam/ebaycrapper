@@ -44,6 +44,7 @@ async function main() {
     const conditions = settings?.conditions || ['new', 'used', 'refurbished'];
     const userWebhook = settings?.discord_webhook || null;
     const maxPages = settings?.max_pages || 10;
+    const binOnly = settings?.bin_only !== false;
 
     console.log('Exclude keywords:', excludeKeywords.length ? excludeKeywords.join(', ') : '(none)');
     console.log('Conditions:', conditions.join(', '));
@@ -74,6 +75,7 @@ async function main() {
       searchQueries,
       excludeKeywords,
       conditions,
+      binOnly,
     });
 
     // Restore original webhook

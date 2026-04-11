@@ -235,8 +235,9 @@ async function scrapeQuery(searchQuery, options) {
   const deals = [];
   let scanned = 0;
 
+  const binParam = options.binOnly !== false ? '&LH_BIN=1' : '';
   for (let page = 1; page <= maxPages; page++) {
-    const url = `https://www.ebay.com/sch/i.html?_nkw=${encodedQuery}&_sop=10&rt=nc&LH_BIN=1&_pgn=${page}`;
+    const url = `https://www.ebay.com/sch/i.html?_nkw=${encodedQuery}&_sop=10&rt=nc${binParam}&_pgn=${page}`;
 
     try {
       console.log(`[${queryText}] page ${page}...`);
